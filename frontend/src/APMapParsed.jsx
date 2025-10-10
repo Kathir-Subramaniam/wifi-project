@@ -26,7 +26,7 @@ export default function APMapParsed({ clientsByIndex = [] }) {
     const doc = parser.parseFromString(svgText, 'image/svg+xml');
     const cs = Array.from(doc.querySelectorAll('circle'));
     // Expect 32; log to verify
-    console.log('Parsed circles:', cs.length);
+    console.log('Parsed circles:', cs.length); //gets 31 for some reason (could be because array starts at 0); Remove after debug finished
     setCircles(
       cs.map((c, i) => ({
         idx: i,
