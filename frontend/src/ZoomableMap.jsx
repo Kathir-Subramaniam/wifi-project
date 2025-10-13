@@ -14,36 +14,35 @@ export default function ZoomableMap({ children, viewBox = { w: 1355, h: 1016 }, 
   });
 
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const wrapperRef = useRef(null); // add this
 
-  // Compute a "fit and center" transform that fills the container while preserving aspect ratio
   const computeHome = useCallback(() => {
-    const svg = svgRef.current;
-    if (!svg) return homeRef.current;
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return homeRef.current;
 
-    const rect = svg.getBoundingClientRect(); // actual rendered size
-    const scale = Math.min(rect.width / viewBox.w, rect.height / viewBox.h);
-    const translateX = (rect.width - viewBox.w * scale) / 2;
-    const translateY = (rect.height - viewBox.h * scale) / 2;
+    const rect = wrapper.getBoundingClientRect();
+    const containerW = rect.width;
+    const containerH = rect.height;
+
+    const scale = Math.min(containerW / viewBox.w, containerH / viewBox.h);
+
+    const contentW = viewBox.w * scale;
+    const contentH = viewBox.h * scale;
+
+    const translateX = (containerW - contentW) / 2;
+    const translateY = (containerH - contentH) / 2;
+
     return { scale, translateX, translateY };
   }, [viewBox.w, viewBox.h]);
 
-  // Initialize to the home transform on mount
   useLayoutEffect(() => {
-    const home = computeHome();
-    homeRef.current = home;
-    setState((s) => ({ ...s, ...home }));
-  }, [computeHome]);
-
-  // Recompute home on resize (optional: snap immediately)
-  useLayoutEffect(() => {
-    const onResize = () => {
+    requestAnimationFrame(() => {
       const home = computeHome();
       homeRef.current = home;
       setState((s) => ({ ...s, ...home }));
-    };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    });
   }, [computeHome]);
+
 
   const onWheel = useCallback((e) => {
     e.preventDefault();
