@@ -8,12 +8,43 @@ import activeAPImg from './assets/activeAP.svg'
 import floorStatusImg from './assets/floorStatus.svg'
 import ZoomableMap from './ZoomableMap.jsx';
 
-const statCards = [
-  { label: 'Total Devices', value: '117', icon: devicesImg },
-  { label: 'Active APs', value: '24/24', icon: activeAPImg },
-  { label: 'Building Occupancy', value: '69%', icon: occupancyImg },
-  { label: 'Floor Status', value: 'Active', icon: floorStatusImg },
-];
+// const statCards = [
+//   { label: 'Total Devices', value: '117', icon: devicesImg },
+//   { label: 'Active APs', value: '24/24', icon: activeAPImg },
+//   { label: 'Building Occupancy', value: '69%', icon: occupancyImg },
+//   { label: 'Floor Status', value: 'Active', icon: floorStatusImg },
+// ];
+
+const [stats, setStats] = useState({
+  totalDevices : 0,
+  totalAps: 0,
+  buildingOccupancy: 69,
+  floorStatus: 'Active'
+})
+
+
+useEffect(() => {
+  const fetchData = async () => {
+    try {
+      const devicesResponse = await fetch('http://localhost:3000/api/stats/total-devices')
+      const devicesData = await devicesResponse.json()
+
+      const apsResponse = await fetch('http://localhost:3000/api/stats/total-aps')
+      const apsData = await apsResponse.json()
+
+      setStats({
+        totalDevices : devicesData.totalDevices,
+        apsData: apsData.totalAps,
+        buildingOccupancy: 69,
+        floorStatus: 'Active'
+      })
+
+    } catch (error) {
+      console.log("Error fetching data", error)
+    }
+  }
+  fetchData()
+})
 
 // Marker colors for density tiers
 const COLORS = {
