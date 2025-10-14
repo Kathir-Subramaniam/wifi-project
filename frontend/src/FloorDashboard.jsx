@@ -23,6 +23,7 @@ function getDensityColor(n) {
 
 // Points are in percentage coordinates (0–100)
 const samplePoints = [
+  //Delete this and the samplePoints
   { x: 22, y: 34, devices: 6, label: 'NW Office' },
   { x: 31, y: 45, devices: 12, label: 'Open Area' },
   { x: 47, y: 62, devices: 18, label: 'Hall' },
@@ -56,7 +57,7 @@ const [stats, setStats] = useState({
         setStats({
           totalDevices : devicesData.totalDevices,
           totalAps: apsData.totalAps,
-          buildingOccupancy: 69,
+          buildingOccupancy: Math.round(devicesData.totalDevices / 400 * 100)+ "%",
           floorStatus: 'Active'
         })
   
