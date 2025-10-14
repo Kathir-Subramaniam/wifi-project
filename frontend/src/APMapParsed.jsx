@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-// Same file, imported twice: as URL and as raw text
 import floorSvgUrl from './assets/floorMap.svg';
+import wifiSvgUrl from './assets/wifiSymbol.svg';
 import svgText from './assets/floorMap.svg?raw';
 
 const VIEWBOX = { w: 1355, h: 1016 };
@@ -10,69 +10,67 @@ const COLORS = {
   medium: '#F59E0B',
   high: '#EF4444',
 };
-
-const getFill = (clients) => {
-  if (clients >= 20) return COLORS.high;
-  if (clients >= 10) return COLORS.medium;
-  if (clients >= 1) return COLORS.low;
-  return COLORS.low; // default visible color
-};
+const getFill = (clients) => (clients >= 20 ? COLORS.high : clients >= 10 ? COLORS.medium : COLORS.low);
 
 export default function APMapParsed({ clientsByIndex = [] }) {
   const [circles, setCircles] = useState([]);
 
   useEffect(() => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgText, 'image/svg+xml');
+    const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
     const cs = Array.from(doc.querySelectorAll('circle'));
-    // Expect 32; log to verify
-    console.log('Parsed circles:', cs.length); //gets 31 for some reason (could be because array starts at 0); Remove after debug finished
+    console.log('Parsed circles:', cs.length);
     setCircles(
       cs.map((c, i) => ({
         idx: i,
         cx: parseFloat(c.getAttribute('cx') || '0'),
         cy: parseFloat(c.getAttribute('cy') || '0'),
-        r: parseFloat(c.getAttribute('r') || '0'),
+        r: parseFloat(c.getAttribute('r') || '11.5'),
       }))
     );
   }, []);
 
   return (
-    <svg
-      viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`}
-      className="ft-map-svg"
-      preserveAspectRatio="xMidYMid meet"
-    >
-      {/* Base floorplan image (keeps the map visuals) */}
+    <svg viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`} className="ft-map-svg" preserveAspectRatio="xMidYMid meet">
+      {/* Base floorplan */}
       <image href={floorSvgUrl} x="0" y="0" width={VIEWBOX.w} height={VIEWBOX.h} opacity="0.95" />
 
-      {/* Colored overlays — MUST be after the image */}
+      {/* AP overlay */}
       <g className="ap-overlay">
         {circles.map((c) => {
           const clients = clientsByIndex[c.idx] ?? 0;
           const fill = getFill(clients);
+          const r = c.r || 11.5;
 
-          // Create glow effect based on color intensity
-          const glowOpacity = clients >= 20 ? 0.6 : clients >= 10 ? 0.4 : 0.2;
-          const glowRadius = clients >= 20 ? 35 : clients >= 10 ? 25 : 18;
+          // Soft glow tiers (no blur → no edge clipping)
           const tier = clients >= 20 ? 3 : clients >= 10 ? 2 : 1;
 
-          return (
-            <g key={c.idx}>
-              {/* Glow effect - rendered first (behind the main circle) */}
-              {tier >= 1 && (
-                <circle cx={c.cx} cy={c.cy} r={c.r + 18} fill={fill} opacity={0.18} />
-              )}
-              {tier >= 2 && (
-                <circle cx={c.cx} cy={c.cy} r={c.r + 28} fill={fill} opacity={0.12} />
-              )}
-              {tier >= 3 && (
-                <circle cx={c.cx} cy={c.cy} r={c.r + 38} fill={fill} opacity={0.08} />
-              )}
+          // Wi‑Fi icon size relative to AP radius
+          const iconSize = r * 1.5; // tweak 1.6–2.0 to taste
+          const half = iconSize / 2;
 
-              <circle cx={c.cx} cy={c.cy} r={c.r} style={{ fill }} opacity={0.98}>
+          return (
+            <g key={c.idx} transform={`translate(${c.cx}, ${c.cy})`}>
+              {/* Glows behind the dot */}
+              {tier >= 1 && <circle r={r + 18} fill={fill} opacity={0.18} />}
+              {tier >= 2 && <circle r={r + 28} fill={fill} opacity={0.12} />}
+              {tier >= 3 && <circle r={r + 38} fill={fill} opacity={0.08} />}
+
+              {/* Main dot */}
+              <circle r={r} fill={fill} opacity={0.98}>
                 <title>{`AP #${c.idx + 1} • ${clients} clients`}</title>
               </circle>
+
+              {/* Wi‑Fi icon centered on the dot */}
+              <image
+                href={wifiSvgUrl}
+                x={-half}
+                y={-half}
+                width={iconSize}
+                height={iconSize}
+                style={{ pointerEvents: 'none' }}
+                opacity="0.95"
+                preserveAspectRatio="xMidYMid meet"
+              />
             </g>
           );
         })}
