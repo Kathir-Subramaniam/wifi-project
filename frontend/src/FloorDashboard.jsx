@@ -55,7 +55,7 @@ const [stats, setStats] = useState({
   
         setStats({
           totalDevices : devicesData.totalDevices,
-          apsData: apsData.totalAps,
+          totalAps: apsData.totalAps,
           buildingOccupancy: 69,
           floorStatus: 'Active'
         })
