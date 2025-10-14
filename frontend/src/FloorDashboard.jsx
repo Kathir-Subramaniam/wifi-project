@@ -8,44 +8,6 @@ import activeAPImg from './assets/activeAP.svg'
 import floorStatusImg from './assets/floorStatus.svg'
 import ZoomableMap from './ZoomableMap.jsx';
 
-// const statCards = [
-//   { label: 'Total Devices', value: '117', icon: devicesImg },
-//   { label: 'Active APs', value: '24/24', icon: activeAPImg },
-//   { label: 'Building Occupancy', value: '69%', icon: occupancyImg },
-//   { label: 'Floor Status', value: 'Active', icon: floorStatusImg },
-// ];
-
-const [stats, setStats] = useState({
-  totalDevices : 0,
-  totalAps: 0,
-  buildingOccupancy: 69,
-  floorStatus: 'Active'
-})
-
-
-useEffect(() => {
-  const fetchData = async () => {
-    try {
-      const devicesResponse = await fetch('http://localhost:3000/api/stats/total-devices')
-      const devicesData = await devicesResponse.json()
-
-      const apsResponse = await fetch('http://localhost:3000/api/stats/total-aps')
-      const apsData = await apsResponse.json()
-
-      setStats({
-        totalDevices : devicesData.totalDevices,
-        apsData: apsData.totalAps,
-        buildingOccupancy: 69,
-        floorStatus: 'Active'
-      })
-
-    } catch (error) {
-      console.log("Error fetching data", error)
-    }
-  }
-  fetchData()
-})
-
 // Marker colors for density tiers
 const COLORS = {
   low: '#2DD4BF',    // teal (low)
@@ -74,12 +36,45 @@ const samplePoints = [
 ];
 
 export default function FloorDashboard() {
-  const [points, setPoints] = useState(samplePoints);
 
+
+const [stats, setStats] = useState({
+  totalDevices : 0,
+  totalAps: 0,
+  buildingOccupancy: 69,
+  floorStatus: 'Active'
+})
   useEffect(() => {
-    // TODO: plug in your live data source here and map to [{x,y,devices,label}]
-    // setPoints(liveData);
-  }, []);
+    const fetchData = async () => {
+      try {
+        const devicesResponse = await fetch('http://localhost:3000/api/stats/total-devices')
+        const devicesData = await devicesResponse.json()
+  
+        const apsResponse = await fetch('http://localhost:3000/api/stats/total-aps')
+        const apsData = await apsResponse.json()
+  
+        setStats({
+          totalDevices : devicesData.totalDevices,
+          apsData: apsData.totalAps,
+          buildingOccupancy: 69,
+          floorStatus: 'Active'
+        })
+  
+      } catch (error) {
+        console.log("Error fetching data", error)
+      }
+    } 
+    fetchData()
+  })
+  
+  const statCards = [
+    { label: 'Total Devices', value: stats.totalDevices, icon: devicesImg },
+    { label: 'Active APs', value: stats.totalAps, icon: activeAPImg },
+    { label: 'Building Occupancy', value: stats.buildingOccupancy, icon: occupancyImg },
+    { label: 'Floor Status', value: stats.floorStatus, icon: floorStatusImg },
+  ];
+
+  const [points, setPoints] = useState(samplePoints);
 
   const totalDevices = points.reduce((s, p) => s + p.devices, 0);
   const hotspots = points.filter((p) => p.devices >= 20).length;
