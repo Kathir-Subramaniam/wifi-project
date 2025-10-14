@@ -51,17 +51,34 @@ export default function APMapParsed({ clientsByIndex = [] }) {
         {circles.map((c) => {
           const clients = clientsByIndex[c.idx] ?? 0;
           const fill = getFill(clients);
+          
+          // Create glow effect based on color intensity
+          const glowOpacity = clients >= 20 ? 0.6 : clients >= 10 ? 0.4 : 0.2;
+          const glowRadius = clients >= 20 ? 35 : clients >= 10 ? 25 : 18;
+          
           return (
-            <circle
-              key={c.idx}
-              cx={c.cx}
-              cy={c.cy}
-              r={c.r}
-              style={{ fill }}
-              opacity={0.98}
-            >
-              <title>{`AP #${c.idx + 1} • ${clients} clients`}</title>
-            </circle>
+            <g key={c.idx}>
+              {/* Glow effect - rendered first (behind the main circle) */}
+              <circle
+                cx={c.cx}
+                cy={c.cy}
+                r={c.r + glowRadius}
+                fill={fill}
+                opacity={glowOpacity}
+                filter="blur(3px)"
+              />
+              
+              {/* Main circle - rendered on top */}
+              <circle
+                cx={c.cx}
+                cy={c.cy}
+                r={c.r}
+                style={{ fill }}
+                opacity={0.98}
+              >
+                <title>{`AP #${c.idx + 1} • ${clients} clients`}</title>
+              </circle>
+            </g>
           );
         })}
       </g>
