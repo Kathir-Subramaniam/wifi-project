@@ -149,6 +149,7 @@ html, body {
   height: 100%;
   display: block;
   cursor: grab;
+  overflow: visible;
 }
 
 /* Markers (hover glow) */
