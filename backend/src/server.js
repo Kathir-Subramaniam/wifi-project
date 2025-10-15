@@ -23,7 +23,7 @@ app.get('/api/health', (req,res) => {
 
 app.get('/api/stats/total-devices', async (req,res) => {
     try {
-        const totalDevices = await prisma.device.count() //for kathir: prisma sends and sql query to the db asking for the count of devices
+        const totalDevices = await prisma.device.count() //prisma sends and sql query to the db asking for the count of devices
         res.json({totalDevices})
     } catch (error){
         console.error('Error fetching device count')
@@ -33,7 +33,7 @@ app.get('/api/stats/total-devices', async (req,res) => {
 
 app.get('/api/stats/total-aps', async (req,res) => {
     try {
-        const totalAps = await prisma.aP.count() //for kathir: prisma sends and sql query to the db asking for the count of Aps
+        const totalAps = await prisma.aP.count() //prisma sends and sql query to the db asking for the count of Aps
         res.json({totalAps})
     } catch (error){
         console.error("Error fetching Aps count")

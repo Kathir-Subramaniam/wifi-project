@@ -51,6 +51,7 @@ export default function APMapParsed({ clientsByIndex = [] }) {
           return (
             <g key={c.idx} transform={`translate(${c.cx}, ${c.cy})`}>
               {/* Glows behind the dot */}
+              {tier >= 1 && <circle r={r + 8} fill={fill} opacity={0.18} />}
               {tier >= 1 && <circle r={r + 18} fill={fill} opacity={0.18} />}
               {tier >= 2 && <circle r={r + 28} fill={fill} opacity={0.12} />}
               {tier >= 3 && <circle r={r + 38} fill={fill} opacity={0.08} />}
