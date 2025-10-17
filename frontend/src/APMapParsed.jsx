@@ -22,6 +22,7 @@ export default function APMapParsed({ clientsByIndex = [] }) {
     setCircles(
       cs.map((c, i) => ({
         idx: i,
+        apId: parseInt(c.getAttribute('data-ap-id') || "0"),
         cx: parseFloat(c.getAttribute('cx') || '0'),
         cy: parseFloat(c.getAttribute('cy') || '0'),
         r: parseFloat(c.getAttribute('r') || '11.5'),
