@@ -46,6 +46,7 @@ const [stats, setStats] = useState({
   floorStatus: 'Active'
 })
 
+const [apCount, setApCount] = useState([])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -58,7 +59,9 @@ const [stats, setStats] = useState({
 
         const apsCountResponse = await fetch('http://localhost:3000/api/stats/devices-by-ap')
         const apsCount = await apsCountResponse.json()
-        console.log(apsCount)
+
+        setApCount(apsCount)
+        console.log("ApCount: " , apCount)
 
         setStats({
           totalDevices : devicesData.totalDevices,
@@ -129,9 +132,8 @@ const [stats, setStats] = useState({
             <ZoomableMap viewBox={{ w: 1355, h: 1016 }} height={560}>
               {/* Keep APMapParsed rendering as children so it shares the same coordinate space */}
               <APMapParsed
-                clientsByIndex={[7, 5, 12, 6, 3, 4, 2, 8, 11, 7, 9, 5, 8, 7, 3, 4, 5, 6, 12, 18, 10, 4, 3, 2, 6, 9, 10, 7, 21, 14, 16, 8]}
-                // clientsByIndex = apsCount
-
+                // clientsByIndex={[7, 5, 12, 6, 3, 4, 2, 8, 11, 7, 9, 5, 8, 7, 3, 4, 5, 6, 12, 18, 10, 4, 3, 2, 6, 9, 10, 7, 21, 14, 16, 8]}
+                apCount = {apCount}
               />
             </ZoomableMap>
 

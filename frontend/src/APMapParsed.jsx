@@ -12,7 +12,7 @@ const COLORS = {
 };
 const getFill = (clients) => (clients >= 20 ? COLORS.high : clients >= 10 ? COLORS.medium : COLORS.low);
 
-export default function APMapParsed({ clientsByIndex = [] }) {
+export default function APMapParsed({ apCount = [] }) {
   const [circles, setCircles] = useState([]);
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export default function APMapParsed({ clientsByIndex = [] }) {
   }, []);
 
 const getDeviceCountByApId = (apId) => {
-  const ap = apsCount.find(ap => ap.Number === apId)
+  const ap = apCount.find(ap => ap.apNumber === apId)
   return ap ? ap.deviceCount : 0
 }
 
