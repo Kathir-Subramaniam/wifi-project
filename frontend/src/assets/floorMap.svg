@@ -7,38 +7,39 @@
   </defs>
   <g clip-path="url(#clip0_37_31)">
     <!-- AP dots as circles -->
-    <circle cx="1222.5" cy="501.5" r="11.5" fill="#D9D9D9" data-ap-id="1" /> 
-    <circle cx="148.5" cy="198.5" r="11.5" fill="#D9D9D9" data-ap-id="2" />
-    <circle cx="97.5" cy="643.5" r="11.5" fill="#D9D9D9" data-ap-id="3" />
-    <circle cx="676.5" cy="469" r="11.5" fill="#D9D9D9" data-ap-id="4" />
-    <circle cx="1051.5" cy="684.5" r="11.5" fill="#D9D9D9" data-ap-id="5" />
-    <circle cx="1218.5" cy="38.5" r="11.5" fill="#D9D9D9" data-ap-id="6" />
+    <circle cx="853.5" cy="145.5" r="11.5" fill="#D9D9D9" data-ap-id="1" />
+    <circle cx="1218.5" cy="38.5" r="11.5" fill="#D9D9D9" data-ap-id="2" />
+    <circle cx="148.5" cy="198.5" r="11.5" fill="#D9D9D9" data-ap-id="3" />
+    <circle cx="376.5" cy="232.5" r="11.5" fill="#D9D9D9" data-ap-id="4" />
+    <circle cx="446.5" cy="141.5" r="11.5" fill="#D9D9D9" data-ap-id="5" />
+    <circle cx="676.5" cy="469" r="11.5" fill="#D9D9D9" data-ap-id="6" />
     <circle cx="958.5" cy="243.5" r="11.5" fill="#D9D9D9" data-ap-id="7" />
-    <circle cx="521.5" cy="817" r="11.5" fill="#D9D9D9" data-ap-id="8" />
-    <circle cx="1276.5" cy="855.5" r="11.5" fill="#D9D9D9" data-ap-id="9" />
-    <circle cx="276.5" cy="829.5" r="11.5" fill="#D9D9D9" data-ap-id="10" />
-    <circle cx="1304.5" cy="971.5" r="11.5" fill="#D9D9D9" data-ap-id="11" />
-    <circle cx="833.5" cy="937.5" r="11.5" fill="#D9D9D9" data-ap-id="12" />
-    <circle cx="87.5" cy="360.5" r="11.5" fill="#D9D9D9" data-ap-id="13" />
-    <circle cx="1082.5" cy="971.5" r="11.5" fill="#D9D9D9" data-ap-id="14" />
-    <circle cx="793.5" cy="333.5" r="11.5" fill="#D9D9D9" data-ap-id="15" />
-    <circle cx="382.5" cy="646.5" r="11.5" fill="#D9D9D9" data-ap-id="16" />
-    <circle cx="1276.5" cy="623.5" r="11.5" fill="#D9D9D9" data-ap-id="17" />
-    <circle cx="376.5" cy="232.5" r="11.5" fill="#D9D9D9" data-ap-id="18" />
-    <circle cx="914.5" cy="797.5" r="11.5" fill="#D9D9D9" data-ap-id="19" /> 
-    <circle cx="853.5" cy="145.5" r="11.5" fill="#D9D9D9" data-ap-id="20" />
-    <circle cx="1002.5" cy="476.5" r="11.5" fill="#D9D9D9" data-ap-id="21" />
-    <circle cx="92.5" cy="985.5" r="11.5" fill="#D9D9D9" data-ap-id="22" />
-    <circle cx="677.5" cy="725" r="11.5" fill="#D9D9D9" data-ap-id="23" />
-    <circle cx="1253.5" cy="770.5" r="11.5" fill="#D9D9D9" data-ap-id="24" /> 
-    <circle cx="120.5" cy="793.5" r="11.5" fill="#D9D9D9" data-ap-id="25" />
-    <circle cx="1108.5" cy="862.5" r="11.5" fill="#D9D9D9" data-ap-id="26" />
-    <circle cx="393.5" cy="450.5" r="11.5" fill="#D9D9D9" data-ap-id="27" />
-    <circle cx="223.5" cy="962.5" r="11.5" fill="#D9D9D9" data-ap-id="28" />
+    <circle cx="793.5" cy="333.5" r="11.5" fill="#D9D9D9" data-ap-id="8" />
+    <circle cx="1222.5" cy="400.5" r="11.5" fill="#D9D9D9" data-ap-id="9" />
+    <circle cx="1222.5" cy="501.5" r="11.5" fill="#D9D9D9" data-ap-id="10" />
+    <circle cx="1276.5" cy="623.5" r="11.5" fill="#D9D9D9" data-ap-id="11" />
+    <circle cx="1253.5" cy="770.5" r="11.5" fill="#D9D9D9" data-ap-id="12" />
+    <circle cx="1002.5" cy="476.5" r="11.5" fill="#D9D9D9" data-ap-id="13" />
+    <circle cx="1051.5" cy="684.5" r="11.5" fill="#D9D9D9" data-ap-id="14" />
+    <circle cx="914.5" cy="797.5" r="11.5" fill="#D9D9D9" data-ap-id="15" />
+    <circle cx="1108.5" cy="862.5" r="11.5" fill="#D9D9D9" data-ap-id="16" />
+    <circle cx="87.5" cy="360.5" r="11.5" fill="#D9D9D9" data-ap-id="17" />
+    <circle cx="393.5" cy="450.5" r="11.5" fill="#D9D9D9" data-ap-id="18" />
+    <circle cx="382.5" cy="646.5" r="11.5" fill="#D9D9D9" data-ap-id="19" />
+    <circle cx="17.5" cy="728" r="11.5" fill="#D9D9D9" data-ap-id="20" />
+    <circle cx="97.5" cy="643.5" r="11.5" fill="#D9D9D9" data-ap-id="21" />
+    <circle cx="120.5" cy="793.5" r="11.5" fill="#D9D9D9" data-ap-id="22" />
+    <circle cx="276.5" cy="829.5" r="11.5" fill="#D9D9D9" data-ap-id="23" />
+    <circle cx="223.5" cy="962.5" r="11.5" fill="#D9D9D9" data-ap-id="24" />
+    <circle cx="92.5" cy="985.5" r="11.5" fill="#D9D9D9" data-ap-id="25" />
+    <circle cx="1276.5" cy="855.5" r="11.5" fill="#D9D9D9" data-ap-id="26" />
+    <circle cx="1304.5" cy="971.5" r="11.5" fill="#D9D9D9" data-ap-id="27" />
+    <circle cx="1082.5" cy="971.5" r="11.5" fill="#D9D9D9" data-ap-id="28" />
     <circle cx="964.5" cy="975.5" r="11.5" fill="#D9D9D9" data-ap-id="29" />
-    <circle cx="1222.5" cy="400.5" r="11.5" fill="#D9D9D9" data-ap-id="30" />
-    <circle cx="17.5" cy="728" r="11.5" fill="#D9D9D9" data-ap-id="31" />
-    <circle cx="446.5" cy="141.5" r="11.5" fill="#D9D9D9" data-ap-id="32" />
+    <circle cx="677.5" cy="725" r="11.5" fill="#D9D9D9" data-ap-id="30" />
+    <circle cx="521.5" cy="817" r="11.5" fill="#D9D9D9" data-ap-id="31" />
+    <circle cx="833.5" cy="937.5" r="11.5" fill="#D9D9D9" data-ap-id="32" />
+
 
     <!-- Floor plan structural paths (unchanged) -->
     <path d="M1126 444.5H1352.5" stroke="#94A3B8" stroke-width="5" />
