@@ -59,7 +59,7 @@ export default function APMapParsed({ clientsByIndex = [] }) {
 
               {/* Main dot */}
               <circle r={r} fill={fill} opacity={0.98}>
-                <title>{`AP #${c.idx + 1} • ${clients} clients`}</title>
+                <title>{`AP #${c.apId} • ${clients} clients`}</title>
               </circle>
 
               {/* Wi‑Fi icon centered on the dot */}
