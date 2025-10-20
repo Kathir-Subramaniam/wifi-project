@@ -30,6 +30,11 @@ export default function APMapParsed({ clientsByIndex = [] }) {
     );
   }, []);
 
+const getDeviceCountByApId = (apId) => {
+  const ap = apsCount.find(ap => ap.Number === apId)
+  return ap ? ap.deviceCount : 0
+}
+
   return (
     <svg viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`} className="ft-map-svg" preserveAspectRatio="xMidYMid meet">
       {/* Base floorplan */}
@@ -38,7 +43,7 @@ export default function APMapParsed({ clientsByIndex = [] }) {
       {/* AP overlay */}
       <g className="ap-overlay">
         {circles.map((c) => {
-          const clients = clientsByIndex[c.idx] ?? 0;
+          const clients = getDeviceCountByApId[c.apId] ?? 0;
           const fill = getFill(clients);
           const r = c.r || 11.5;
 

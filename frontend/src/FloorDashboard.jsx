@@ -45,6 +45,8 @@ const [stats, setStats] = useState({
   buildingOccupancy: 69,
   floorStatus: 'Active'
 })
+
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -53,7 +55,11 @@ const [stats, setStats] = useState({
   
         const apsResponse = await fetch('http://localhost:3000/api/stats/total-aps')
         const apsData = await apsResponse.json()
-  
+
+        const apsCountResponse = await fetch('http://localhost:3000/api/stats/devices-by-ap')
+        const apsCount = await apsCountResponse.json()
+        console.log(apsCount)
+
         setStats({
           totalDevices : devicesData.totalDevices,
           totalAps: apsData.totalAps,
@@ -66,7 +72,7 @@ const [stats, setStats] = useState({
       }
     } 
     fetchData()
-  })
+  }, [])
   
   const statCards = [
     { label: 'Total Devices', value: stats.totalDevices, icon: devicesImg },
@@ -124,6 +130,8 @@ const [stats, setStats] = useState({
               {/* Keep APMapParsed rendering as children so it shares the same coordinate space */}
               <APMapParsed
                 clientsByIndex={[7, 5, 12, 6, 3, 4, 2, 8, 11, 7, 9, 5, 8, 7, 3, 4, 5, 6, 12, 18, 10, 4, 3, 2, 6, 9, 10, 7, 21, 14, 16, 8]}
+                // clientsByIndex = apsCount
+
               />
             </ZoomableMap>
 

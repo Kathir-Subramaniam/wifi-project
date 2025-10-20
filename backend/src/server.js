@@ -5,7 +5,14 @@ const prisma = new PrismaClient()
 const app = express()
 const port = 3000
 
-app.use(cors())
+app.use(cors({
+    origin: ['http://localhost:5173', 'http://localhost:3000'], // Allow your frontend ports
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  }));
+  
+app.use(express.json());
 
 app.get('/', (req, res) => {
   res.send('Hello World!')
@@ -38,5 +45,49 @@ app.get('/api/stats/total-aps', async (req,res) => {
     } catch (error){
         console.error("Error fetching Aps count")
         res.status(500).json({ error: 'Failed to fetch devices'})
+    }
+})
+
+app.get('/api/stats/devices-by-ap', async (req, res) => {
+    try{
+        const aps = await prisma.aP.findMany({
+            select: {
+                title: true,
+                apNumber: true,
+                _count: {
+                    select: {devices: true},
+                }
+            }
+        })
+
+        const devices = aps.map(ap => {
+        return {
+            title : ap.title,
+            apNumber: ap.apNumber,
+            deviceCount: ap._count.devices
+        }
+        }) 
+
+        res.json(devices)
+    } catch (error) {
+        console.error("Error fetching Aps count")
+        res.status(500).json({error : 'Failed to fetch data'})
+    }
+})
+
+
+app.post("/api/devices", async (req,res) => {
+    try {
+        const {mac, apId} = req.body
+        const device = await prisma.device.create({
+            data : { 
+                mac,
+                apId
+            }
+        })
+        res.json(device)
+    } catch(error){
+        console.error("Error creating device:", error)
+        res.status(500).json({ error: "Failed to create device" })
     }
 })
