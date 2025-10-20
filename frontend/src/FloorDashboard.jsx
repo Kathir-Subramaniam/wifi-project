@@ -60,8 +60,8 @@ const [apCount, setApCount] = useState([])
         const apsCountResponse = await fetch('http://localhost:3000/api/stats/devices-by-ap')
         const apsCount = await apsCountResponse.json()
 
+        console.log(apsCount)
         setApCount(apsCount)
-        console.log("ApCount: " , apCount)
 
         setStats({
           totalDevices : devicesData.totalDevices,

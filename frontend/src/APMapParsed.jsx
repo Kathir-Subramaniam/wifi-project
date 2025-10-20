@@ -14,6 +14,7 @@ const getFill = (clients) => (clients >= 20 ? COLORS.high : clients >= 10 ? COLO
 
 export default function APMapParsed({ apCount = [] }) {
   const [circles, setCircles] = useState([]);
+  console.log("ApCount: " , apCount)
 
   useEffect(() => {
     const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
@@ -32,6 +33,7 @@ export default function APMapParsed({ apCount = [] }) {
 
 const getDeviceCountByApId = (apId) => {
   const ap = apCount.find(ap => ap.apNumber === apId)
+  console.log("AP Count: ", ap)
   return ap ? ap.deviceCount : 0
 }
 
@@ -43,7 +45,7 @@ const getDeviceCountByApId = (apId) => {
       {/* AP overlay */}
       <g className="ap-overlay">
         {circles.map((c) => {
-          const clients = getDeviceCountByApId[c.apId] ?? 0;
+          const clients = getDeviceCountByApId(c.apId) ?? 0;
           const fill = getFill(clients);
           const r = c.r || 11.5;
 
