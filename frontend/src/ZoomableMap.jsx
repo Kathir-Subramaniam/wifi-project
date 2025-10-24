@@ -1,4 +1,3 @@
-// src/ZoomableMap.jsx
 import React, { useRef, useState, useCallback, useLayoutEffect } from 'react';
 
 export default function ZoomableMap({ children, viewBox = { w: 1355, h: 1016 }, height = 560 }) {
@@ -14,7 +13,7 @@ export default function ZoomableMap({ children, viewBox = { w: 1355, h: 1016 }, 
   });
 
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-  const wrapperRef = useRef(null); // add this
+  const wrapperRef = useRef(null);
 
   const computeHome = useCallback(() => {
     const wrapper = wrapperRef.current;
@@ -100,9 +99,9 @@ export default function ZoomableMap({ children, viewBox = { w: 1355, h: 1016 }, 
 
   return (
     <div
+      class="map-box"
       style={{
         width: '100%',
-        height,
         position: 'relative',
         overflow: 'hidden',
         cursor: state.isPanning ? 'grabbing' : 'grab',

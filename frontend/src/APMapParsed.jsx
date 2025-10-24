@@ -47,7 +47,7 @@ const getDeviceCountByApId = (apId) => {
         {circles.map((c) => {
           const clients = getDeviceCountByApId(c.apId) ?? 0;
           const fill = getFill(clients);
-          const r = c.r || 11.5;
+          const r = 14.5;
 
           // Soft glow tiers (no blur → no edge clipping)
           const tier = clients >= 20 ? 3 : clients >= 10 ? 2 : 1;
@@ -60,9 +60,11 @@ const getDeviceCountByApId = (apId) => {
             <g key={c.idx} transform={`translate(${c.cx}, ${c.cy})`}>
               {/* Glows behind the dot */}
               {tier >= 1 && <circle r={r + 8} fill={fill} opacity={0.18} />}
-              {tier >= 1 && <circle r={r + 18} fill={fill} opacity={0.18} />}
-              {tier >= 2 && <circle r={r + 28} fill={fill} opacity={0.12} />}
-              {tier >= 3 && <circle r={r + 38} fill={fill} opacity={0.08} />}
+              {tier >= 1 && <circle r={r + 18} fill={fill} opacity={0.16} />}
+              {tier >= 2 && <circle r={r + 28} fill={fill} opacity={0.14} />}
+              {tier >= 2 && <circle r={r + 38} fill={fill} opacity={0.12} />}  
+              {tier >= 3 && <circle r={r + 48} fill={fill} opacity={0.10} />}
+              {tier >= 3 && <circle r={r + 58} fill={fill} opacity={0.08} />}              
 
               {/* Main dot */}
               <circle r={r} fill={fill} opacity={0.98}>

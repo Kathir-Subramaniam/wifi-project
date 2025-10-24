@@ -216,8 +216,16 @@ html, body {
 .ft-metric-value {
   font-weight: 700;
 }
-
+.map-box {
+  height: 560px;
+}
 /* Responsive */
+
+@media (min-width: 1560px) {
+  .map-box {
+    height: 1000px;
+  }
+}
 @media (max-width: 1024px) {
   .ft-grid {
     grid-template-columns: 1fr;

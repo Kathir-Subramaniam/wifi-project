@@ -15,26 +15,8 @@ const COLORS = {
   high: '#EF4444',   // red (high)
 };
 
-function getDensityColor(n) {
-  if (n >= 20) return COLORS.high;
-  if (n >= 10) return COLORS.medium;
-  return COLORS.low;
-}
-
 // Points are in percentage coordinates (0–100)
-const samplePoints = [
-  //Delete this and the samplePoints
-  { x: 22, y: 34, devices: 6, label: 'NW Office' },
-  { x: 31, y: 45, devices: 12, label: 'Open Area' },
-  { x: 47, y: 62, devices: 18, label: 'Hall' },
-  { x: 59, y: 36, devices: 7, label: 'Conference' },
-  { x: 72, y: 40, devices: 22, label: 'Focus Pods' },
-  { x: 84, y: 69, devices: 9, label: 'Team Room' },
-  { x: 63, y: 79, devices: 5, label: 'Lobby' },
-  { x: 43, y: 86, devices: 8, label: 'Breakout' },
-  { x: 15, y: 75, devices: 10, label: 'Workshop' },
-  { x: 89, y: 30, devices: 21, label: 'East Wing' },
-];
+const samplePoints = [];
 
 export default function FloorDashboard() {
 
@@ -129,10 +111,9 @@ const [apCount, setApCount] = useState([])
           </div>
 
           <div className="ft-map-frame">
-            <ZoomableMap viewBox={{ w: 1355, h: 1016 }} height={560}>
+            <ZoomableMap viewBox={{ w: 1355, h: 1016 }}>
               {/* Keep APMapParsed rendering as children so it shares the same coordinate space */}
               <APMapParsed
-                // clientsByIndex={[7, 5, 12, 6, 3, 4, 2, 8, 11, 7, 9, 5, 8, 7, 3, 4, 5, 6, 12, 18, 10, 4, 3, 2, 6, 9, 10, 7, 21, 14, 16, 8]}
                 apCount = {apCount}
               />
             </ZoomableMap>
