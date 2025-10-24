@@ -4,3 +4,4 @@ prisma
 package.json
 package-lock.json
 scripts
+FirebaseService.json

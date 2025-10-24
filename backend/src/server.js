@@ -1,9 +1,11 @@
 const express = require('express')
+const cookieParser = require('cookie-parser')
 const cors = require('cors')
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient()
 const app = express()
-const port = 3000
+const port = process.env.PORT || 3000
+const router = require("../routes");
 
 app.use(cors({
     origin: ['http://localhost:5173', 'http://localhost:3000'], // Allow your frontend ports
@@ -13,6 +15,9 @@ app.use(cors({
   }));
   
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); 
+app.use(cookieParser());
+app.use(router);
 
 app.get('/', (req, res) => {
   res.send('Hello World!')
