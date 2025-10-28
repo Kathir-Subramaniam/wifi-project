@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import './AuthPage.css';
-import logo from './assets/logo.png';
 
 export default function AuthPage({ onAuthed }) {
-  // modes: login | signup | reset
+  // modes: login | signup
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
+  const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
@@ -45,12 +44,8 @@ export default function AuthPage({ onAuthed }) {
       setError('Please enter a valid email address.');
       return;
     }
-    if (mode !== 'reset' && !isPasswordStrong(password)) {
+    if (!isPasswordStrong(password)) {
       setError('Password must be at least 6 characters.');
-      return;
-    }
-    if (mode === 'signup' && password !== confirm) {
-      setError('Passwords do not match.');
       return;
     }
 
@@ -59,14 +54,15 @@ export default function AuthPage({ onAuthed }) {
       if (mode === 'login') {
         await postJSON('/api/login', { email, password });
         setMessage('Logged in successfully.');
-        onAuthed?.(); // optionally navigate to dashboard
+        onAuthed?.(); // navigate to dashboard
       } else if (mode === 'signup') {
-        await postJSON('/api/register', { email, password });
-        setMessage('Verification email sent! Account created.');
-        // you can auto-login after register if your server returns a token
-      } else if (mode === 'reset') {
-        await postJSON('/api/reset-password', { email });
-        setMessage('Password reset email sent. Check your inbox.');
+        await postJSON('/api/register', { email, password, fullName });
+        setMessage('Account created successfully!');
+        // Auto-switch to login mode after successful signup
+        setTimeout(() => {
+          setMode('login');
+          setMessage(null);
+        }, 2000);
       }
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.');
@@ -75,139 +71,139 @@ export default function AuthPage({ onAuthed }) {
     }
   };
 
-  const headerTitle =
-    mode === 'login' ? 'Sign in'
-    : mode === 'signup' ? 'Create account'
-    : 'Reset password';
-
   return (
     <div className="auth-root">
-      <div className="auth-appbar">
-        <div className="auth-brand">
-          <div className="auth-brand-icon"><img src={logo} alt="FloorTrack" /></div>
-          <div className="auth-brand-text">FloorTrack</div>
+      {/* Main Content */}
+      <div className="auth-content">
+        {/* Enhanced Header with subtle animation */}
+        <div className="auth-header">
+          <div className="auth-title-container">
+            <h1 className="auth-title">
+              {mode === 'login' ? 'FloorTrack' : 'FloorTrack'}
+            </h1>
+            <div className="auth-title-accent"></div>
+          </div>
+          <p className="auth-subtitle">
+            {mode === 'login' 
+              ? 'Access your network dashboard'
+              : 'Join the FloorTrack community'
+            }
+          </p>
         </div>
-        <button className="auth-live-btn">
-          <span className="auth-dot" />
-          Secure
-        </button>
-      </div>
 
-      <div className="auth-grid">
-        {/* Left panel: form */}
-        <div className="auth-panel">
-          <div className="auth-panel-header">
-            <div className="auth-panel-title">{headerTitle}</div>
-            <div className="auth-secure-pill">Protected</div>
+        {/* Enhanced Form Panel */}
+        <div className="ft-panel auth-panel-enhanced">
+          <div className="ft-panel-header">
+            <div className="ft-panel-title">
+              Welcome
+            </div>
+            <div className="ft-panel-sub">Sign in to your account</div>
           </div>
 
-          <div className="auth-panel-body">
-            <form onSubmit={handleSubmit} className="auth-form">
-              <label className="auth-label">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className={`auth-input ${email && !isEmailValid(email) ? 'is-invalid' : ''}`}
-              />
+          {/* Enhanced Tab Navigation */}
+          <div className="auth-tabs">
+            <button 
+              className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
+              onClick={() => setMode('login')}
+            >
+              Login
+            </button>
+            <button 
+              className={`auth-tab ${mode === 'signup' ? 'active' : ''}`}
+              onClick={() => setMode('signup')}
+            >
+              Sign Up
+            </button>
+          </div>
 
-              {mode !== 'reset' && (
-                <>
-                  <label className="auth-label">Password</label>
+          <form onSubmit={handleSubmit} className="auth-form">
+            {mode === 'signup' && (
+              <div className="auth-field">
+                <label className="auth-label">
+                  Full Name
+                </label>
+                <div className="input-container">
                   <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className={`auth-input ${password && !isPasswordStrong(password) ? 'is-invalid' : ''}`}
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="John Doe"
+                    className="auth-input"
+                    required
                   />
-                </>
-              )}
+                  <div className="input-glow"></div>
+                </div>
+              </div>
+            )}
 
-              {mode === 'signup' && (
-                <>
-                  <label className="auth-label">Confirm password</label>
-                  <input
-                    type="password"
-                    value={confirm}
-                    onChange={(e) => setConfirm(e.target.value)}
-                    placeholder="••••••••"
-                    className={`auth-input ${confirm && confirm !== password ? 'is-invalid' : ''}`}
-                  />
-                </>
-              )}
+            <div className="auth-field">
+              <label className="auth-label">
+                Email
+              </label>
+              <div className="input-container">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className={`auth-input ${email && !isEmailValid(email) ? 'is-invalid' : ''}`}
+                  required
+                />
+                <div className="input-glow"></div>
+              </div>
+            </div>
 
-              {error && <div className="auth-alert auth-alert-error">{error}</div>}
-              {message && <div className="auth-alert auth-alert-success">{message}</div>}
+            <div className="auth-field">
+              <label className="auth-label">
+                Password
+              </label>
+              <div className="input-container">
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className={`auth-input ${password && !isPasswordStrong(password) ? 'is-invalid' : ''}`}
+                  required
+                />
+                <div className="input-glow"></div>
+              </div>
+            </div>
 
-              <button type="submit" disabled={loading} className="auth-primary-btn">
-                {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset email'}
-              </button>
+            {error && (
+              <div className="auth-alert auth-alert-error">
+                {error}
+              </div>
+            )}
+            {message && (
+              <div className="auth-alert auth-alert-success">
+                {message}
+              </div>
+            )}
 
-              <div className="auth-actions-row">
-                {mode === 'login' && (
+            <button type="submit" disabled={loading} className="auth-submit-btn">
+              <span className="btn-content">
+                {loading ? (
                   <>
-                    <button type="button" onClick={() => { clearAlerts(); setMode('reset'); }} className="auth-link-btn">
-                      Forgot password?
-                    </button>
-                    <span className="auth-sep">•</span>
-                    <button type="button" onClick={() => { clearAlerts(); setMode('signup'); }} className="auth-link-btn">
-                      Create account
-                    </button>
+                    <span className="loading-spinner"></span>
+                    Please wait...
+                  </>
+                ) : (
+                  <>
+                    {mode === 'login' ? 'Sign In' : 'Create Account'}
                   </>
                 )}
-                {mode === 'signup' && (
-                  <button type="button" onClick={() => { clearAlerts(); setMode('login'); }} className="auth-link-btn">
-                    Have an account? Sign in
-                  </button>
-                )}
-                {mode === 'reset' && (
-                  <button type="button" onClick={() => { clearAlerts(); setMode('login'); }} className="auth-link-btn">
-                    Back to sign in
-                  </button>
-                )}
-              </div>
-            </form>
-          </div>
+              </span>
+              <div className="btn-glow"></div>
+            </button>
+          </form>
         </div>
 
-        {/* Right panel: status/legend for visual parity */}
-        <div className="auth-side">
-          <div className="auth-side-header">
-            <div className="auth-side-title">Account status</div>
-            <div className="auth-status-pill">Active</div>
-          </div>
-
-          <div className="auth-metrics">
-            <div className="auth-metric-card">
-              <span className="auth-metric-dot dot-cyan" />
-              <div>
-                <div className="auth-metric-label">Policy</div>
-                <div className="auth-metric-value">Email + Password</div>
-              </div>
-            </div>
-            <div className="auth-metric-card">
-              <span className="auth-metric-dot dot-amber" />
-              <div>
-                <div className="auth-metric-label">Sessions</div>
-                <div className="auth-metric-value">Per-device</div>
-              </div>
-            </div>
-            <div className="auth-metric-card">
-              <span className="auth-metric-dot dot-green" />
-              <div>
-                <div className="auth-metric-label">State</div>
-                <div className="auth-metric-value">Secure</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="auth-legend">
-            <div className="auth-legend-item"><span className="legend-dot dot-red" /> High risk</div>
-            <div className="auth-legend-item"><span className="legend-dot dot-amber" /> Medium risk</div>
-            <div className="auth-legend-item"><span className="legend-dot dot-cyan" /> Low risk</div>
-          </div>
+        {/* Subtle background decoration */}
+        <div className="auth-decoration">
+          <div className="decoration-circle circle-1"></div>
+          <div className="decoration-circle circle-2"></div>
+          <div className="decoration-circle circle-3"></div>
         </div>
       </div>
     </div>
