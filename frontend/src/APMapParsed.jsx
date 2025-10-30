@@ -14,6 +14,7 @@ const getFill = (clients) => (clients >= 20 ? COLORS.high : clients >= 10 ? COLO
 
 export default function APMapParsed({ apCount = [] }) {
   const [circles, setCircles] = useState([]);
+  const [hoveredAP, setHoveredAP] = useState(null);
   console.log("ApCount: " , apCount)
 
   useEffect(() => {
@@ -37,8 +38,17 @@ const getDeviceCountByApId = (apId) => {
   return ap ? ap.deviceCount : 0
 }
 
+const getAPTitle = (apId) => {
+  const ap = apCount.find(ap => ap.apNumber === apId)
+  return ap ? ap.title : `AP ${apId}`
+}
+
   return (
-    <svg viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`} className="ft-map-svg" preserveAspectRatio="xMidYMid meet">
+    <svg 
+      viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`} 
+      className="ft-map-svg" 
+      preserveAspectRatio="xMidYMid meet"
+    >
       {/* Base floorplan */}
       <image href={floorSvgUrl} x="0" y="0" width={VIEWBOX.w} height={VIEWBOX.h} opacity="0.95" />
 
@@ -67,9 +77,44 @@ const getDeviceCountByApId = (apId) => {
               {tier >= 3 && <circle r={r + 58} fill={fill} opacity={0.08} />}              
 
               {/* Main dot */}
-              <circle r={r} fill={fill} opacity={0.98}>
-                <title>{`AP #${c.apId} • ${clients} clients`}</title>
+              <circle 
+                r={r} 
+                fill={fill} 
+                opacity={0.98}
+                onMouseEnter={() => setHoveredAP(c)}
+                onMouseLeave={() => setHoveredAP(null)}
+                style={{ cursor: 'pointer' }}
+              >
+                <title>{`${getAPTitle(c.apId)} • ${clients} devices`}</title>
               </circle>
+              
+              {/* Custom SVG Tooltip */}
+              {hoveredAP && hoveredAP.idx === c.idx && (
+                <g transform="translate(0, -40)">
+                  <rect
+                    x="-70"
+                    y="-22"
+                    width="140"
+                    height="22"
+                    rx="5"
+                    fill="rgba(15, 20, 28, 0.95)"
+                    stroke="#1F2937"
+                    strokeWidth="1.5"
+                  />
+                  
+                  {/* AP Name */}
+                  <text
+                    x="0"
+                    y="-7"
+                    textAnchor="middle"
+                    fill="#E6EDF3"
+                    fontSize="12"
+                    fontWeight="600"
+                  >
+                    {getAPTitle(c.apId)} • {clients}
+                  </text>
+                </g>
+              )}
 
               {/* Wi‑Fi icon centered on the dot */}
               <image
