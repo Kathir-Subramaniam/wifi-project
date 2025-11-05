@@ -81,6 +81,7 @@ const getAPTitle = (apId) => {
                 r={r} 
                 fill={fill} 
                 opacity={0.98}
+                title={`${getAPTitle(c.apId)} • ${clients} devices`}
                 onMouseEnter={() => setHoveredAP(c)}
                 onMouseLeave={() => setHoveredAP(null)}
                 style={{ cursor: 'pointer' }}
