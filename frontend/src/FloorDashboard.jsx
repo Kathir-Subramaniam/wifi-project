@@ -1,88 +1,102 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import './FloorDashboard.css';
 import APMapParsed from './APMapParsed.jsx';
-import logo from './assets/logo.png'
-import devicesImg from './assets/devices.svg'
-import occupancyImg from './assets/occupancy.svg'
-import activeAPImg from './assets/activeAP.svg'
-import floorStatusImg from './assets/floorStatus.svg'
 import ZoomableMap from './ZoomableMap.jsx';
 
-// Marker colors for density tiers
-const COLORS = {
-  low: '#2DD4BF',    // teal (low)
-  medium: '#F59E0B', // amber (medium)
-  high: '#EF4444',   // red (high)
-};
+import logo from './assets/logo.png';
+import devicesImg from './assets/devices.svg';
+import occupancyImg from './assets/occupancy.svg';
+import activeAPImg from './assets/activeAP.svg';
+import floorStatusImg from './assets/floorStatus.svg';
 
-// Points are in percentage coordinates (0–100)
-const samplePoints = [];
+const API_BASE = 'http://localhost:3000';
+const VIEWBOX = { w: 1355, h: 1016 };
+
+const COLORS = { low: '#2DD4BF', medium: '#F59E0B', high: '#EF4444' };
 
 export default function FloorDashboard() {
+  const floorId = 1; // or from route/state
 
+  const [stats, setStats] = useState({
+    totalDevices: 0,
+    totalAps: 0,
+    buildingOccupancy: '0%',
+    floorStatus: 'Active',
+  });
 
-const [stats, setStats] = useState({
-  totalDevices : 0,
-  totalAps: 0,
-  buildingOccupancy: 69,
-  floorStatus: 'Active'
-})
+  const [apCount, setApCount] = useState([]); // [{apId,title,cx,cy,deviceCount}]
+  const [floorMapUrl, setFloorMapUrl] = useState(null);
 
-const [apCount, setApCount] = useState([])
-
+  // Fetch everything once
   useEffect(() => {
-    const fetchData = async () => {
+    let revokeUrl;
+
+    async function fetchAll() {
       try {
-        const devicesResponse = await fetch('http://localhost:3000/api/stats/total-devices')
-        const devicesData = await devicesResponse.json()
-  
-        const apsResponse = await fetch('http://localhost:3000/api/stats/total-aps')
-        const apsData = await apsResponse.json()
+        const [devicesRes, apsRes, apsCountRes, floorRes, floorMapUrl] = await Promise.all([
+          fetch(`${API_BASE}/api/stats/total-devices`),
+          fetch(`${API_BASE}/api/stats/total-aps`),
+          fetch(`${API_BASE}/api/stats/devices-by-ap?floorId=${floorId}`),
+          fetch(`${API_BASE}/api/floors/${floorId}`),
+        ]);
 
-        const apsCountResponse = await fetch('http://localhost:3000/api/stats/devices-by-ap')
-        const apsCount = await apsCountResponse.json()
-
-        console.log(apsCount)
-        setApCount(apsCount)
+        const devicesData = await devicesRes.json();
+        const apsData = await apsRes.json();
+        const apsCountData = await apsCountRes.json();
+        const floorData = await floorRes.json();
 
         setStats({
-          totalDevices : devicesData.totalDevices,
-          totalAps: apsData.totalAps,
-          buildingOccupancy: Math.round(devicesData.totalDevices / 400 * 100)+ "%",
-          floorStatus: 'Active'
-        })
-  
-      } catch (error) {
-        console.log("Error fetching data", error)
+          totalDevices: devicesData.totalDevices ?? 0,
+          totalAps: apsData.totalAps ?? 0,
+          buildingOccupancy: `${Math.round((devicesData.totalDevices ?? 0) / 400 * 100)}%`,
+          floorStatus: 'Active',
+        });
+
+        setApCount(Array.isArray(apsCountData.aps) ? apsCountData.aps : []);
+
+        // svgMap may be a full URL or raw SVG markup
+        const map = floorData?.svgMap;
+        if (map) {
+          if (/^https?:\/\//i.test(map)) {
+            setFloorMapUrl(map);
+          } else {
+            const blob = new Blob([map], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            revokeUrl = url;
+            setFloorMapUrl(url);
+          }
+        } else {
+          setFloorMapUrl(null);
+        }
+      } catch (err) {
+        console.log('Error fetching data', err);
       }
-    } 
-    fetchData()
-  }, [])
-  
-  const statCards = [
+    }
+
+    fetchAll();
+    return () => {
+      if (revokeUrl) URL.revokeObjectURL(revokeUrl);
+    };
+  }, [floorId]);
+
+  const statCards = useMemo(() => [
     { label: 'Total Devices', value: stats.totalDevices, icon: devicesImg },
     { label: 'Active APs', value: stats.totalAps, icon: activeAPImg },
     { label: 'Building Occupancy', value: stats.buildingOccupancy, icon: occupancyImg },
     { label: 'Floor Status', value: stats.floorStatus, icon: floorStatusImg },
-  ];
+  ], [stats]);
 
-  const [points, setPoints] = useState(samplePoints);
-
-  const totalDevices = points.reduce((s, p) => s + p.devices, 0);
-  const hotspots = points.filter((p) => p.devices >= 20).length;
+  // You can remove samplePoints-derived totals/hotspots or rework with real data if needed
 
   return (
     <div className="ft-root">
-      {/* Top App Bar */}
+      {/* App bar */}
       <div className="ft-appbar">
         <div className="ft-brand">
           <div className="ft-brand-icon"><img src={logo} className="ft-brand-icon" /></div>
           <div className="ft-brand-text">FloorTrack</div>
         </div>
-        <button className="ft-live-btn">
-          <span className="ft-dot" />
-          Live
-        </button>
+        <button className="ft-live-btn"><span className="ft-dot" />Live</button>
       </div>
 
       {/* Stats Row */}
@@ -100,8 +114,7 @@ const [apCount, setApCount] = useState([])
         ))}
       </div>
 
-
-      {/* Content Grid: map + legend */}
+      {/* Content Grid */}
       <div className="ft-grid">
         {/* Map Panel */}
         <div className="ft-panel">
@@ -111,17 +124,17 @@ const [apCount, setApCount] = useState([])
           </div>
 
           <div className="ft-map-frame">
-            <ZoomableMap viewBox={{ w: 1355, h: 1016 }}>
-              {/* Keep APMapParsed rendering as children so it shares the same coordinate space */}
+            <ZoomableMap viewBox={VIEWBOX}>
               <APMapParsed
-                apCount = {apCount}
+                floorId={floorId}
+                apCount={apCount}
+                floorMapUrl={floorMapUrl}
               />
             </ZoomableMap>
-
           </div>
         </div>
 
-        {/* Legend Panel */}
+        {/* Legend Panel etc... */}
         <div className="ft-legend-panel">
           <div className="ft-legend-title">Connection Density</div>
           <div className="ft-legend-items">
@@ -152,11 +165,11 @@ const [apCount, setApCount] = useState([])
             <div className="ft-legend-metrics">
               <div className="ft-legend-metric">
                 <span className="ft-metric-label">Total devices</span>
-                <span className="ft-metric-value">{totalDevices}</span>
+                <span className="ft-metric-value">{stats.totalDevices}</span>
               </div>
               <div className="ft-legend-metric">
                 <span className="ft-metric-label">Hotspots (≥20)</span>
-                <span className="ft-metric-value">{hotspots}</span>
+                <span className="ft-metric-value">{stats.totalAps}</span>
               </div>
             </div>
           </div>
