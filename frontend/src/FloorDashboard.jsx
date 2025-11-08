@@ -15,7 +15,10 @@ const VIEWBOX = { w: 1355, h: 1016 };
 const COLORS = { low: '#2DD4BF', medium: '#F59E0B', high: '#EF4444' };
 
 export default function FloorDashboard() {
-  const floorId = 1; // or from route/state
+  const [floors, setFloors] = useState([]); // [{id, name, buildingName}]
+  const [floorId, setFloorId] = useState(1);
+  const [floorName, setFloorName] = useState('Floor 1');
+  const [buildingName, setBuildingName] = useState('');
 
   const [stats, setStats] = useState({
     totalDevices: 0,
@@ -27,23 +30,49 @@ export default function FloorDashboard() {
   const [apCount, setApCount] = useState([]); // [{apId,title,cx,cy,deviceCount}]
   const [floorMapUrl, setFloorMapUrl] = useState(null);
 
-  // Fetch everything once
+  // 1) Fetch floors list with building names (dynamic options)
   useEffect(() => {
+    async function fetchFloors() {
+      try {
+        const res = await fetch(`${API_BASE}/api/floors`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setFloors(data);
+          // If current floor is not in list, default to first
+          if (!data.find(f => String(f.id) === String(floorId))) {
+            const first = data[0];
+            if (first) {
+              setFloorId(Number(first.id));
+            }
+          }
+        }
+      } catch (e) {
+        console.log('Error fetching floors list', e);
+      }
+    }
+    fetchFloors();
+  }, []);
+
+  // 2) Fetch all floor-dependent data when floorId changes
+  useEffect(() => {
+    if (!floorId) return;
     let revokeUrl;
 
     async function fetchAll() {
       try {
-        const [devicesRes, apsRes, apsCountRes, floorRes, floorMapUrl] = await Promise.all([
+        const [devicesRes, apsRes, apsCountRes, floorRes, buildingRes] = await Promise.all([
           fetch(`${API_BASE}/api/stats/total-devices`),
           fetch(`${API_BASE}/api/stats/total-aps`),
           fetch(`${API_BASE}/api/stats/devices-by-ap?floorId=${floorId}`),
           fetch(`${API_BASE}/api/floors/${floorId}`),
+          fetch(`${API_BASE}/api/floors/${floorId}/building`),
         ]);
 
         const devicesData = await devicesRes.json();
         const apsData = await apsRes.json();
         const apsCountData = await apsCountRes.json();
         const floorData = await floorRes.json();
+        const buildingData = await buildingRes.json();
 
         setStats({
           totalDevices: devicesData.totalDevices ?? 0,
@@ -54,7 +83,9 @@ export default function FloorDashboard() {
 
         setApCount(Array.isArray(apsCountData.aps) ? apsCountData.aps : []);
 
-        // svgMap may be a full URL or raw SVG markup
+        setFloorName(floorData?.name ? floorData.name : `Floor ${floorId}`);
+        setBuildingName(buildingData?.name || '');
+
         const map = floorData?.svgMap;
         if (map) {
           if (/^https?:\/\//i.test(map)) {
@@ -86,7 +117,24 @@ export default function FloorDashboard() {
     { label: 'Floor Status', value: stats.floorStatus, icon: floorStatusImg },
   ], [stats]);
 
-  // You can remove samplePoints-derived totals/hotspots or rework with real data if needed
+  // 3) Reusable selector UI (used in app bar and panel header)
+  const FloorSelector = (
+    <div className="ft-floor-selector">
+      <label className="ft-floor-label" htmlFor="floor-select">Floor</label>
+      <select
+        id="floor-select"
+        className="ft-floor-select"
+        value={floorId}
+        onChange={(e) => setFloorId(Number(e.target.value))}
+      >
+        {floors.map(f => (
+          <option key={f.id} value={Number(f.id)}>
+            {f.name}{f.buildingName ? ` — ${f.buildingName}` : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 
   return (
     <div className="ft-root">
@@ -118,9 +166,15 @@ export default function FloorDashboard() {
       <div className="ft-grid">
         {/* Map Panel */}
         <div className="ft-panel">
-          <div className="ft-panel-header">
-            <div className="ft-panel-title">Floor 1 - CODE</div>
-            <div className="ft-panel-sub">Real-time connection heatmap</div>
+          <div className="ft-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <div className="ft-panel-title">
+                {floorName}{buildingName ? ` • ${buildingName}` : ''}
+              </div>
+              <div className="ft-panel-sub">Real-time connection heatmap</div>
+            </div>
+            {/* And also next to the title */}
+            {FloorSelector}
           </div>
 
           <div className="ft-map-frame">
@@ -174,7 +228,7 @@ export default function FloorDashboard() {
             </div>
           </div>
         </div>
-      </div>
+      </div>  
     </div>
   );
 }

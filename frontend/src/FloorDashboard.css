@@ -219,6 +219,37 @@ html, body {
 .map-box {
   height: 560px;
 }
+/* Floor selector */
+.ft-floor-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ft-floor-label {
+  font-size: 12px;
+  color: #8CA0B3;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.ft-floor-select {
+  padding: 8px 12px;
+  background: #0A1620;
+  border: 1px solid #223042;
+  border-radius: 8px;
+  color: #E6EDF3;
+  font-size: 14px;
+  outline: none;
+}
+
+.ft-floor-select:focus {
+  border-color: #9ADCF9;
+  box-shadow: 0 0 0 3px rgba(154, 220, 249, 0.1);
+}
+
+
 /* Responsive */
 
 @media (min-width: 1560px) {

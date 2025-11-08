@@ -50,6 +50,55 @@ app.get('/api/floors/:floorId', async (req, res) => {
   }
 });
 
+app.get('/api/floors', async (req, res) => {
+  try {
+    const floors = await prisma.floors.findMany({
+      select: {
+        id: true,
+        name: true,
+        building: { select: { id: true, name: true } },
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    const payload = floors.map(f => ({
+      id: f.id.toString(),
+      name: f.name,
+      buildingId: f.building?.id?.toString?.() ?? null,
+      buildingName: f.building?.name ?? null,
+    }));
+
+    res.json(payload);
+  } catch (err) {
+    console.error('Error fetching floors', err);
+    res.status(500).json({ error: 'Failed to fetch floors' });
+  }
+});
+
+app.get('/api/floors/:floorId/building', async (req, res) => {
+  try {
+    const floorId = BigInt(req.params.floorId);
+    const floor = await prisma.floors.findUnique({
+      where: { id: floorId },
+      select: {
+        building: { select: { id: true, name: true } },
+      },
+    });
+
+    if (!floor || !floor.building) {
+      return res.status(404).json({ error: 'Building not found for floor' });
+    }
+
+    res.json({
+      id: floor.building.id.toString(),
+      name: floor.building.name,
+    });
+  } catch (err) {
+    console.error('Error fetching building for floor', err);
+    res.status(500).json({ error: 'Failed to fetch building' });
+  }
+});
+
 /**
  * Devices by AP for a floor
  */
