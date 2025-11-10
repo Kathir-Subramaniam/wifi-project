@@ -7,33 +7,48 @@ const {
     sendPasswordResetEmail
 } = require('../config/firebase');
 
-const auth = getAuth();
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
+const auth = getAuth();
 class FirebaseAuthController {
-    registerUser(req, res) {
-        const { email, password } = req.body;
-        if (!email || !password) {
-            return res.status(422).json({
-                email: "Email is required",
-                password: "Password is required",
-            });
-        }
-        createUserWithEmailAndPassword(auth, email, password)
-            .then((userCredential) => {
-                sendEmailVerification(auth.currentUser)
-                    .then(() => {
-                        res.status(201).json({ message: "Verification email sent! User created successfully!" });
-                    })
-                    .catch((error) => {
-                        console.error(error);
-                        res.status(500).json({ error: "Error sending email verification" });
-                    });
-            })
-            .catch((error) => {
-                const errorMessage = error.message || "An error occurred while registering user";
-                res.status(500).json({ error: errorMessage });
-            });
+    async registerUser(req, res) {
+  try {
+    const { firstName, lastName, email, password } = req.body;
+    if (!firstName || !lastName || !email || !password) {
+      return res.status(422).json({
+        firstName: !firstName ? 'First name is required' : undefined,
+        lastName: !lastName ? 'Last name is required' : undefined,
+        email: !email ? 'Email is required' : undefined,
+        password: !password ? 'Password is required' : undefined,
+      });
     }
+
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const firebaseUid = userCredential.user.uid;
+
+    try {
+      await prisma.users.create({
+        data: { firstName, lastName, email, firebaseUid, roleId: BigInt(1) }, // BigInt per schema
+      });
+    } catch (dbError) {
+      console.error('DB error:', dbError);
+      if (dbError.code === 'P2002') {
+        return res.status(409).json({ message: 'User already exists' });
+      }
+      return res.status(500).json({ message: 'Error saving to the database!' });
+    }
+
+    await sendEmailVerification(userCredential.user);
+    return res
+      .status(201)
+      .json({ message: 'Verification email sent! User created successfully!' });
+  } catch (error) {
+    console.error('Register error:', error);
+    return res.status(500).json({ error: 'Registration failed' });
+  }
+}
+
     loginUser(req, res) {
         const { email, password } = req.body;
         if (!email || !password) {

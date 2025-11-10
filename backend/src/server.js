@@ -194,5 +194,18 @@ app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
 });
 
-
-
+// app.post('/api/register', async (req, res) => {
+//   try {
+//     const { email, firebaseUid, firstName, lastName } = req.body;
+//     if (!email || !firebaseUid || !firstName || !lastName) {
+//       return res.status(400).json({ error: 'Missing required fields' });
+//     }
+//     const user = await prisma.users.create({
+//       data: { email, firebaseUid, firstName, lastName, roleId: 1 }, // set default roleId as needed
+//     });
+//     res.json({ id: user.id, email: user.email });
+//   } catch (err) {
+//     console.error('Error creating user:', err);
+//     res.status(500).json({ error: 'Failed to create user' });
+//   }
+// });

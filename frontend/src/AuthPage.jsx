@@ -6,7 +6,8 @@ export default function AuthPage({ onAuthed }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
@@ -48,6 +49,10 @@ export default function AuthPage({ onAuthed }) {
       setError('Password must be at least 6 characters.');
       return;
     }
+    if (mode === 'signup' && (!firstName.trim() || !lastName.trim())) {
+      setError('Please provide both your first and last name.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -56,7 +61,7 @@ export default function AuthPage({ onAuthed }) {
         setMessage('Logged in successfully.');
         onAuthed?.(); // navigate to dashboard
       } else if (mode === 'signup') {
-        await postJSON('/api/register', { email, password, fullName });
+        await postJSON('/api/register', { email, password, firstName: firstName.trim(), lastName: lastName.trim() });
         setMessage('Account created successfully!');
         // Auto-switch to login mode after successful signup
         setTimeout(() => {
@@ -118,22 +123,40 @@ export default function AuthPage({ onAuthed }) {
 
           <form onSubmit={handleSubmit} className="auth-form">
             {mode === 'signup' && (
-              <div className="auth-field">
-                <label className="auth-label">
-                  Full Name
-                </label>
-                <div className="input-container">
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="John Doe"
-                    className="auth-input"
-                    required
-                  />
-                  <div className="input-glow"></div>
+              <>
+                <div className="auth-field">
+                  <label className="auth-label">
+                    First Name
+                  </label>
+                  <div className="input-container">
+                    <input
+                      type="text"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="John"
+                      className="auth-input"
+                      required
+                    />
+                    <div className="input-glow"></div>
+                  </div>
                 </div>
-              </div>
+                <div className="auth-field">
+                  <label className="auth-label">
+                    Last Name
+                  </label>
+                  <div className="input-container">
+                    <input
+                      type="text"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      placeholder="Doe"
+                      className="auth-input"
+                      required
+                    />
+                    <div className="input-glow"></div>
+                  </div>
+                </div>
+              </>
             )}
 
             <div className="auth-field">
