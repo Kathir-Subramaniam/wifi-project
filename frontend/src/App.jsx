@@ -8,6 +8,7 @@ import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import AuthPage from './AuthPage';
 import FloorDashboard from './FloorDashboard';
 import AdminDashboard from './AdminDashboard';
+import ProfilePage from './ProfilePage';
 
 function AuthRoute() {
   const navigate = useNavigate();
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/" element={<AuthRoute />} />
         <Route path="/home" element={<FloorDashboard />} />
         <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/profile" element={<ProfilePage />} />
       </Routes>
     </BrowserRouter>
   );
