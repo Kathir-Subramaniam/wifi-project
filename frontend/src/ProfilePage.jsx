@@ -1,425 +1,260 @@
 import React, { useEffect, useState } from 'react';
-import './ProfilePage.css';
+import './FloorDashboard.css';
+import './AuthPage.css';
 
-const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
 
-async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(`${apiBase}${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
+async function api(path, opts = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
-    body: body ? JSON.stringify(body) : undefined,
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
   });
-  let data = null;
-  try { data = await res.json(); } catch {}
-  if (!res.ok) {
-    const msg = data?.error || data?.message || `Request failed (${res.status})`;
-    throw new Error(msg);
-  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || 'Request failed');
   return data;
 }
 
-const initialUser = {
-  firstName: '',
-  lastName: '',
-  email: '',
-  role: 'user',
-};
-
-const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
-
 export default function ProfilePage() {
-  const [user, setUser] = useState(initialUser);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [alert, setAlert] = useState(null); // {type: 'success'|'error', message: string}
+  const [me, setMe] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [message, setMessage] = useState(null);
 
-  // Change email
-  const [newEmail, setNewEmail] = useState('');
-  // Change password
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  // Devices
-  const [devices, setDevices] = useState([]); // [{id, mac, nickname?}]
-  const [deviceMac, setDeviceMac] = useState('');
-  const [deviceNickname, setDeviceNickname] = useState('');
-  const [deviceBusyId, setDeviceBusyId] = useState(null);
-  // Delete account
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [confirmText, setConfirmText] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
 
-  const isValidEmail = (val) => /\S+@\S+\.\S+/.test(val);
-  const isStrongPassword = (val) => val && val.length >= 8;
-  const canSaveEmail = newEmail && isValidEmail(newEmail);
-  const canSavePassword =
-    currentPassword && isStrongPassword(newPassword) && newPassword === confirmPassword;
-  const canAddDevice = deviceMac && macRegex.test(deviceMac);
+  const [devices, setDevices] = useState([]);
+  const [devName, setDevName] = useState('');
+  const [devMac, setDevMac] = useState('');
+  const [editDevice, setEditDevice] = useState({}); // { id: { name, mac } }
 
-  const clearAlert = () => setAlert(null);
-  const setError = (m) => setAlert({ type: 'error', message: m });
-  const setSuccess = (m) => setAlert({ type: 'success', message: m });
+  const clearAlerts = () => { setError(null); setMessage(null); };
 
-  // Load current user + devices from API
-  useEffect(() => {
-    let ignore = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const [me, devs] = await Promise.all([
-          api('/api/users/self'),
-          api('/api/users/self/devices'),
-        ]);
-        if (ignore) return;
-        setUser({
-          firstName: me.firstName || '',
-          lastName: me.lastName || '',
-          email: me.email || '',
-          role: me.role || 'user',
-        });
-        setNewEmail(me.email || '');
-        setDevices(Array.isArray(devs) ? devs : []);
-      } catch (e) {
-        if (!ignore) setError(e.message || 'Failed to load profile.');
-      } finally {
-        if (!ignore) setLoading(false);
-      }
-    })();
-    return () => { ignore = true; };
-  }, []);
-
-  // Handlers with real API calls to /api/users/self
-  const handleSaveProfile = async () => {
-    clearAlert();
-    setSaving(true);
+  const reload = async () => {
+    clearAlerts();
+    setLoading(true);
     try {
-      await api('/api/users/self', {
+      const meResp = await api('/api/me');
+      setMe(meResp);
+      const u = meResp?.user;
+      setFirstName(u?.firstName || '');
+      setLastName(u?.lastName || '');
+
+      const myDevs = await api('/api/profile/devices');
+      setDevices(myDevs);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { reload(); }, []);
+
+  const saveProfile = async () => {
+    setBusy(true); clearAlerts();
+    try {
+      await api('/api/profile', { method: 'PUT', body: JSON.stringify({ firstName, lastName }) });
+      setEditing(false);
+      setMessage('Profile updated');
+      await reload();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendPasswordReset = async () => {
+    setBusy(true); clearAlerts();
+    try {
+      const email = me?.user?.email;
+      if (!email) throw new Error('No email on file');
+      await api('/api/reset-password', { method: 'POST', body: JSON.stringify({ email }) });
+      setMessage('Password reset email sent');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createDevice = async () => {
+    setBusy(true); clearAlerts();
+    try {
+      if (!devName || !devMac) throw new Error('name and mac required');
+      await api('/api/profile/devices', { method: 'POST', body: JSON.stringify({ name: devName, mac: devMac }) });
+      setDevName(''); setDevMac('');
+      setMessage('Device added');
+      const myDevs = await api('/api/profile/devices');
+      setDevices(myDevs);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveUserDevice = async (id) => {
+    const payload = editDevice[id];
+    if (!payload) return;
+    setBusy(true); clearAlerts();
+    try {
+      await api(`/api/profile/devices/${id}`, {
         method: 'PUT',
-        body: {
-          firstName: user.firstName.trim(),
-          lastName: user.lastName.trim(),
-        },
+        body: JSON.stringify({ name: payload.name, mac: payload.mac }),
       });
-      setSuccess('Profile saved.');
+      setEditDevice(prev => { const p = { ...prev }; delete p[id]; return p; });
+      setMessage('Device updated');
+      const myDevs = await api('/api/profile/devices');
+      setDevices(myDevs);
     } catch (e) {
-      setError(e.message || 'Failed to save profile.');
+      setError(e.message);
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   };
 
-  const handleSaveEmail = async () => {
-    clearAlert();
-    if (!canSaveEmail) return setError('Please enter a valid email.');
-    setSaving(true);
+  const deleteUserDevice = async (id) => {
+    setBusy(true); clearAlerts();
     try {
-      await api('/api/users/self/email', { method: 'PUT', body: { email: newEmail.trim() } });
-      setUser((u) => ({ ...u, email: newEmail.trim() }));
-      setSuccess('Email updated.');
+      await api(`/api/profile/devices/${id}`, { method: 'DELETE' });
+      setMessage('Device deleted');
+      const myDevs = await api('/api/profile/devices');
+      setDevices(myDevs);
     } catch (e) {
-      setError(e.message || 'Failed to update email.');
+      setError(e.message);
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   };
 
-  const handleSavePassword = async () => {
-    clearAlert();
-    if (!canSavePassword) {
-      if (!currentPassword) return setError('Enter your current password.');
-      if (!isStrongPassword(newPassword))
-        return setError('New password must be at least 8 characters.');
-      if (newPassword !== confirmPassword) return setError('Passwords do not match.');
-    }
-    setSaving(true);
-    try {
-      await api('/api/users/self/password', {
-        method: 'PUT',
-        body: { currentPassword, newPassword },
-      });
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setSuccess('Password changed.');
-    } catch (e) {
-      setError(e.message || 'Failed to change password.');
-    } finally {
-      setSaving(false);
-    }
-  };
+  if (loading) {
+    return (
+      <div className="ft-root">
+        <div className="ft-appbar">
+          <div className="ft-brand"><div className="ft-brand-icon" /><div className="ft-brand-text">Profile</div></div>
+          <a className="ft-live-btn" href="/">Dashboard</a>
+        </div>
+        <div className="ft-panel"><div className="ft-panel-title">Loading…</div></div>
+      </div>
+    );
+  }
 
-  const handleAddDevice = async () => {
-    clearAlert();
-    if (!canAddDevice) return setError('Enter a valid MAC address.');
-    setSaving(true);
-    try {
-      const created = await api('/api/users/self/devices', {
-        method: 'POST',
-        body: {
-          mac: deviceMac.toUpperCase().trim(),
-          nickname: deviceNickname?.trim() || '',
-        },
-      });
-      setDevices((d) => [...d, created]);
-      setDeviceMac('');
-      setDeviceNickname('');
-      setSuccess('Device added.');
-    } catch (e) {
-      setError(e.message || 'Failed to add device.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRemoveDevice = async (id) => {
-    clearAlert();
-    setDeviceBusyId(id);
-    try {
-      await api(`/api/users/self/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      setDevices((d) => d.filter((x) => String(x.id) !== String(id)));
-      setSuccess('Device removed.');
-    } catch (e) {
-      setError(e.message || 'Failed to remove device.');
-    } finally {
-      setDeviceBusyId(null);
-    }
-  };
-
-  const handleDeleteAccount = async () => {
-    clearAlert();
-    if (confirmText !== 'DELETE') {
-      return setError('Type DELETE to confirm.');
-    }
-    setSaving(true);
-    try {
-      await api('/api/users/self', { method: 'DELETE' });
-      setSuccess('Account deleted. Redirecting…');
-      setShowDeleteModal(false);
-      setConfirmText('');
-      setTimeout(() => {
-        window.location.href = '/auth';
-      }, 1000);
-    } catch (e) {
-      setError(e.message || 'Failed to delete account.');
-    } finally {
-      setSaving(false);
-    }
-  };
+  const u = me?.user;
+  const roleName = u?.role?.name || 'User';
 
   return (
     <div className="ft-root">
+      {/* App bar */}
       <div className="ft-appbar">
         <div className="ft-brand">
           <div className="ft-brand-icon" />
-          <div className="ft-brand-text">FloorTrack</div>
+          <div className="ft-brand-text">Profile</div>
         </div>
-        <div style={{ fontWeight: 600 }}>Profile</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <a className="ft-live-btn" href="/">Dashboard</a>
+          <a className="ft-live-btn" href="/admin">Admin</a>
+        </div>
       </div>
 
-      {alert && (
-        <div className={`pf-alert ${alert.type === 'error' ? 'pf-alert-error' : 'pf-alert-success'}`}>
-          {alert.message}
-        </div>
-      )}
+      {error && <div className="auth-alert auth-alert-error" style={{ marginBottom: 12 }}>{String(error)}</div>}
+      {message && <div className="auth-alert auth-alert-success" style={{ marginBottom: 12 }}>{String(message)}</div>}
 
-      <div className="pf-grid">
-        {/* Profile Info */}
+      <div className="ft-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        {/* Profile panel */}
         <div className="ft-panel">
-          <div className="ft-panel-header">
-            <div className="ft-panel-title">Your Profile</div>
-            <div className="ft-panel-sub">Basic information</div>
-          </div>
-          {loading ? (
-            <div className="pf-loading">Loading...</div>
-          ) : (
-            <div className="pf-form">
-              <div className="pf-field">
-                <label className="pf-label">First Name</label>
-                <input
-                  className="pf-input"
-                  value={user.firstName}
-                  onChange={(e) => setUser({ ...user, firstName: e.target.value })}
-                  placeholder="First name"
-                />
-              </div>
-              <div className="pf-field">
-                <label className="pf-label">Last Name</label>
-                <input
-                  className="pf-input"
-                  value={user.lastName}
-                  onChange={(e) => setUser({ ...user, lastName: e.target.value })}
-                  placeholder="Last name"
-                />
-              </div>
-              <div className="pf-actions">
-                <button className="pf-btn" disabled={saving} onClick={handleSaveProfile}>
-                  Save profile
-                </button>
-              </div>
+          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div className="ft-panel-title">Your Profile</div>
+              <div className="ft-panel-sub">Manage your personal information</div>
             </div>
-          )}
-        </div>
+            {!editing ? (
+              <button className="auth-submit-btn" disabled={busy} onClick={() => setEditing(true)}>Edit</button>
+            ) : (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="auth-submit-btn" disabled={busy} onClick={saveProfile}>Save</button>
+                <button className="auth-submit-btn" disabled={busy} onClick={() => { setEditing(false); setFirstName(u?.firstName || ''); setLastName(u?.lastName || ''); }}>Cancel</button>
+              </div>
+            )}
+          </div>
 
-        {/* Change Email */}
-        <div className="ft-panel">
-          <div className="ft-panel-header">
-            <div className="ft-panel-title">Change Email</div>
-            <div className="ft-panel-sub">Current: {user.email || '—'}</div>
-          </div>
-          <div className="pf-form">
-            <div className="pf-field">
-              <label className="pf-label">New Email</label>
-              <input
-                className={`pf-input ${newEmail && !isValidEmail(newEmail) ? 'is-invalid' : ''}`}
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                placeholder="you@domain.com"
-              />
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div className="ft-stat-card" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>Email</div>
+              <div style={{ fontWeight: 700 }}>{u?.email}</div>
             </div>
-            <div className="pf-actions">
-              <button className="pf-btn" disabled={!canSaveEmail || saving} onClick={handleSaveEmail}>
-                Update email
-              </button>
+            <div className="ft-stat-card" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>Role</div>
+              <div style={{ fontWeight: 700 }}>{roleName}</div>
+            </div>
+
+            <div className="ft-stat-card" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>First name</div>
+              {!editing ? <div style={{ fontWeight: 700 }}>{u?.firstName || '-'}</div> : (
+                <input className="auth-input" value={firstName} onChange={e => setFirstName(e.target.value)} />
+              )}
+            </div>
+            <div className="ft-stat-card" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>Last name</div>
+              {!editing ? <div style={{ fontWeight: 700 }}>{u?.lastName || '-'}</div> : (
+                <input className="auth-input" value={lastName} onChange={e => setLastName(e.target.value)} />
+              )}
+            </div>
+
+            <div className="ft-stat-card" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>Password</div>
+              <button className="auth-submit-btn" disabled={busy} onClick={sendPasswordReset}>Send reset email</button>
             </div>
           </div>
         </div>
 
-        {/* Change Password */}
-        <div className="ft-panel">
-          <div className="ft-panel-header">
-            <div className="ft-panel-title">Change Password</div>
-            <div className="ft-panel-sub">Use at least 8 characters</div>
-          </div>
-          <div className="pf-form">
-            <div className="pf-field">
-              <label className="pf-label">Current Password</label>
-              <input
-                className="pf-input"
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="current-password"
-              />
-            </div>
-            <div className="pf-field">
-              <label className="pf-label">New Password</label>
-              <input
-                className={`pf-input ${newPassword && !isStrongPassword(newPassword) ? 'is-invalid' : ''}`}
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="new-password"
-              />
-            </div>
-            <div className="pf-field">
-              <label className="pf-label">Confirm New Password</label>
-              <input
-                className={`pf-input ${confirmPassword && confirmPassword !== newPassword ? 'is-invalid' : ''}`}
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="new-password"
-              />
-            </div>
-            <div className="pf-actions">
-              <button className="pf-btn" disabled={!canSavePassword || saving} onClick={handleSavePassword}>
-                Update password
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Devices */}
+        {/* Owned devices */}
         <div className="ft-panel">
           <div className="ft-panel-header">
             <div className="ft-panel-title">Your Devices</div>
-            <div className="ft-panel-sub">Register devices by MAC address</div>
+            <div className="ft-panel-sub">Devices you own (name + MAC)</div>
           </div>
 
-          <div className="pf-device-add">
-            <input
-              className={`pf-input ${deviceMac && !macRegex.test(deviceMac) ? 'is-invalid' : ''}`}
-              value={deviceMac}
-              onChange={(e) => setDeviceMac(e.target.value)}
-              placeholder="AA:BB:CC:DD:EE:FF"
-            />
-            <input
-              className="pf-input"
-              value={deviceNickname}
-              onChange={(e) => setDeviceNickname(e.target.value)}
-              placeholder="Nickname (optional)"
-            />
-            <button className="pf-btn" disabled={!canAddDevice || saving} onClick={handleAddDevice}>
-              Add device
-            </button>
+          {/* Create */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 12 }}>
+            <input className="auth-input" placeholder="Device name" value={devName} onChange={e => setDevName(e.target.value)} />
+            <input className="auth-input" placeholder="MAC address" value={devMac} onChange={e => setDevMac(e.target.value)} />
+            <button className="auth-submit-btn" disabled={busy || !devName || !devMac} onClick={createDevice}>Add</button>
           </div>
 
-          <div className="pf-device-list">
-            {devices.length === 0 ? (
-              <div className="pf-empty">No devices yet.</div>
-            ) : (
-              devices.map((d) => (
-                <div className="pf-device-item" key={d.id}>
-                  <div className="pf-device-meta">
-                    <div className="pf-device-title">{d.nickname || 'Unnamed device'}</div>
-                    <div className="pf-device-sub">{d.mac}</div>
+          {/* List + edit */}
+          {devices.length === 0 && <div className="ft-legend-sub">No devices linked yet.</div>}
+          {devices.map(d => {
+            const ed = editDevice[d.id] || null;
+            return (
+              <div key={d.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                {ed ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center', width: '100%' }}>
+                    <input className="auth-input" placeholder="Name" value={ed.name ?? d.name ?? ''} onChange={e => setEditDevice(prev => ({ ...prev, [d.id]: { ...ed, name: e.target.value } }))} />
+                    <input className="auth-input" placeholder="MAC" value={ed.mac ?? d.mac ?? ''} onChange={e => setEditDevice(prev => ({ ...prev, [d.id]: { ...ed, mac: e.target.value } }))} />
+                    <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => saveUserDevice(d.id)}>Save</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => setEditDevice(prev => { const p = { ...prev }; delete p[d.id]; return p; })}>Cancel</button>
+                    </div>
                   </div>
-                  <button
-                    className="pf-btn pf-btn-danger"
-                    disabled={deviceBusyId === d.id}
-                    onClick={() => handleRemoveDevice(d.id)}
-                  >
-                    {deviceBusyId === d.id ? 'Removing…' : 'Remove'}
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Danger Zone */}
-        <div className="ft-panel pf-danger">
-          <div className="ft-panel-header">
-            <div className="ft-panel-title">Danger Zone</div>
-            <div className="ft-panel-sub">Delete your account permanently</div>
-          </div>
-          <button className="pf-btn pf-btn-danger" onClick={() => setShowDeleteModal(true)}>
-            Delete account
-          </button>
+                ) : (
+                  <>
+                    <div>{d.name || '(unnamed)'} — {d.mac}</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => setEditDevice(prev => ({ ...prev, [d.id]: { name: d.name ?? '', mac: d.mac ?? '' } }))}>Edit</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => deleteUserDevice(d.id)}>Delete</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
-
-      {showDeleteModal && (
-        <div className="pf-modal-backdrop" onClick={() => setShowDeleteModal(false)}>
-          <div className="pf-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="pf-modal-title">Confirm Deletion</div>
-            <div className="pf-modal-text">
-              This action is permanent and will remove your data. Type DELETE to confirm.
-            </div>
-            <input
-              className="pf-input"
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-              placeholder="Type DELETE"
-            />
-            <div className="pf-actions pf-modal-actions">
-              <button className="pf-btn" onClick={() => setShowDeleteModal(false)}>
-                Cancel
-              </button>
-              <button
-                className="pf-btn pf-btn-danger"
-                disabled={saving || confirmText !== 'DELETE'}
-                onClick={handleDeleteAccount}
-              >
-                {saving ? 'Deleting…' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

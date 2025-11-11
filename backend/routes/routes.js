@@ -4,10 +4,10 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-const firebaseAuthController = require('../controllers/firebase-auth-controller.js');
-const verifyToken = require('../middleware/index.js');
+const firebaseAuthController = require('../controllers/firebase-auth-controller');
+const verifyToken = require('../middleware');
 const PostsController = require('../controllers/posts-controller.js');
-const { getAppUser, canManageBuilding, canManageFloor } = require('../controllers/rbac.js');
+const { getAppUser, canManageBuilding, canManageFloor } = require('../controllers/rbac');
 
 // Helpers
 const toBi = (v) => {
@@ -361,6 +361,129 @@ router.delete('/api/admin/devices/:id', verifyToken, async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('DELETE /api/admin/devices/:id failed', e);
+    res.status(500).json({ error: 'Failed to delete device' });
+  }
+});
+
+// In server.js (or routes):
+router.put('/api/profile', verifyToken, async (req, res) => {
+  try {
+    const { firstName, lastName } = req.body;
+    const u = await prisma.users.update({
+      where: { firebaseUid: req.user.uid },
+      data: {
+        ...(firstName != null && { firstName }),
+        ...(lastName != null && { lastName }),
+      },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    res.json({ id: u.id.toString(), firstName: u.firstName, lastName: u.lastName });
+  } catch (e) {
+    console.error('PUT /api/profile failed', e);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// GET current user's owned devices
+router.get('/api/profile/devices', verifyToken, async (req, res) => {
+  try {
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      select: { id: true },
+    });
+    if (!user) return res.status(403).json({ error: 'Unauthorized' });
+
+    const devs = await prisma.userDevices.findMany({
+      where: { userId: user.id },
+      orderBy: { id: 'asc' },
+      select: { id: true, name: true, mac: true },
+    });
+
+    res.json(devs.map(d => ({ id: d.id.toString(), name: d.name, mac: d.mac })));
+  } catch (e) {
+    console.error('GET /api/profile/devices failed', e);
+    res.status(500).json({ error: 'Failed to load devices' });
+  }
+});
+
+// POST create owned device
+router.post('/api/profile/devices', verifyToken, async (req, res) => {
+  try {
+    const { name, mac } = req.body;
+    if (!name || !mac) return res.status(400).json({ error: 'name and mac required' });
+
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      select: { id: true },
+    });
+    if (!user) return res.status(403).json({ error: 'Unauthorized' });
+
+    const created = await prisma.userDevices.create({
+      data: { name, mac, userId: user.id },
+      select: { id: true, name: true, mac: true },
+    });
+
+    res.json({ id: created.id.toString(), name: created.name, mac: created.mac });
+  } catch (e) {
+    console.error('POST /api/profile/devices failed', e);
+    // Unique MACs will throw; reflect as 400 for UX
+    const msg = /Unique|unique/i.test(e.message) ? 'MAC already exists' : 'Failed to create device';
+    res.status(400).json({ error: msg });
+  }
+});
+
+// PUT update owned device (name/mac)
+router.put('/api/profile/devices/:id', verifyToken, async (req, res) => {
+  try {
+    const id = toBi(req.params.id);
+    const { name, mac } = req.body;
+
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      select: { id: true },
+    });
+    if (!user) return res.status(403).json({ error: 'Unauthorized' });
+
+    const dev = await prisma.userDevices.findUnique({ where: { id } });
+    if (!dev) return res.status(404).json({ error: 'Device not found' });
+    if (dev.userId !== user.id) return res.status(403).json({ error: 'Forbidden' });
+
+    const upd = await prisma.userDevices.update({
+      where: { id },
+      data: {
+        ...(name != null && { name }),
+        ...(mac != null && { mac }),
+      },
+      select: { id: true, name: true, mac: true },
+    });
+
+    res.json({ id: upd.id.toString(), name: upd.name, mac: upd.mac });
+  } catch (e) {
+    console.error('PUT /api/profile/devices/:id failed', e);
+    const msg = /Unique|unique/i.test(e.message) ? 'MAC already exists' : 'Failed to update device';
+    res.status(400).json({ error: msg });
+  }
+});
+
+// DELETE owned device
+router.delete('/api/profile/devices/:id', verifyToken, async (req, res) => {
+  try {
+    const id = toBi(req.params.id);
+
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      select: { id: true },
+    });
+    if (!user) return res.status(403).json({ error: 'Unauthorized' });
+
+    const dev = await prisma.userDevices.findUnique({ where: { id } });
+    if (!dev) return res.status(404).json({ error: 'Device not found' });
+    if (dev.userId !== user.id) return res.status(403).json({ error: 'Forbidden' });
+
+    await prisma.userDevices.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /api/profile/devices/:id failed', e);
     res.status(500).json({ error: 'Failed to delete device' });
   }
 });
