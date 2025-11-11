@@ -1,12 +1,29 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './ProfilePage.css';
 
 const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+
+async function api(path, { method = 'GET', body } = {}) {
+  const res = await fetch(`${apiBase}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (!res.ok) {
+    const msg = data?.error || data?.message || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data;
+}
 
 const initialUser = {
   firstName: '',
   lastName: '',
   email: '',
+  role: 'user',
 };
 
 const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
@@ -15,7 +32,7 @@ export default function ProfilePage() {
   const [user, setUser] = useState(initialUser);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [alert, setAlert] = useState(null);   // {type: 'success'|'error', message: string}
+  const [alert, setAlert] = useState(null); // {type: 'success'|'error', message: string}
 
   // Change email
   const [newEmail, setNewEmail] = useState('');
@@ -35,37 +52,35 @@ export default function ProfilePage() {
   const isValidEmail = (val) => /\S+@\S+\.\S+/.test(val);
   const isStrongPassword = (val) => val && val.length >= 8;
   const canSaveEmail = newEmail && isValidEmail(newEmail);
-  const canSavePassword = currentPassword && isStrongPassword(newPassword) && newPassword === confirmPassword;
+  const canSavePassword =
+    currentPassword && isStrongPassword(newPassword) && newPassword === confirmPassword;
   const canAddDevice = deviceMac && macRegex.test(deviceMac);
 
   const clearAlert = () => setAlert(null);
   const setError = (m) => setAlert({ type: 'error', message: m });
   const setSuccess = (m) => setAlert({ type: 'success', message: m });
 
-  // Mock fetch current user + devices. Replace with real endpoints when ready.
+  // Load current user + devices from API
   useEffect(() => {
     let ignore = false;
     (async () => {
       setLoading(true);
       try {
-        // Replace with: const res = await fetch(`${apiBase}/api/me`, { credentials: 'include' });
-        // const data = await res.json();
-        const data = {
-          firstName: 'Alex',
-          lastName: 'Johnson',
-          email: 'alex@example.com',
-        };
-        const devData = [
-          { id: '1', mac: 'AA:BB:CC:11:22:33', nickname: 'Work Laptop' },
-          { id: '2', mac: 'DD:EE:FF:44:55:66', nickname: 'Phone' },
-        ];
-        if (!ignore) {
-          setUser(data);
-          setNewEmail(data.email);
-          setDevices(devData);
-        }
+        const [me, devs] = await Promise.all([
+          api('/api/users/self'),
+          api('/api/users/self/devices'),
+        ]);
+        if (ignore) return;
+        setUser({
+          firstName: me.firstName || '',
+          lastName: me.lastName || '',
+          email: me.email || '',
+          role: me.role || 'user',
+        });
+        setNewEmail(me.email || '');
+        setDevices(Array.isArray(devs) ? devs : []);
       } catch (e) {
-        if (!ignore) setError('Failed to load profile.');
+        if (!ignore) setError(e.message || 'Failed to load profile.');
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -73,17 +88,36 @@ export default function ProfilePage() {
     return () => { ignore = true; };
   }, []);
 
-  // Handlers (front-end only, ready to wire)
+  // Handlers with real API calls to /api/users/self
+  const handleSaveProfile = async () => {
+    clearAlert();
+    setSaving(true);
+    try {
+      await api('/api/users/self', {
+        method: 'PUT',
+        body: {
+          firstName: user.firstName.trim(),
+          lastName: user.lastName.trim(),
+        },
+      });
+      setSuccess('Profile saved.');
+    } catch (e) {
+      setError(e.message || 'Failed to save profile.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveEmail = async () => {
     clearAlert();
     if (!canSaveEmail) return setError('Please enter a valid email.');
     setSaving(true);
     try {
-      // await fetch(`${apiBase}/api/me/email`, { method: 'PUT', ... })
-      setUser((u) => ({ ...u, email: newEmail }));
+      await api('/api/users/self/email', { method: 'PUT', body: { email: newEmail.trim() } });
+      setUser((u) => ({ ...u, email: newEmail.trim() }));
       setSuccess('Email updated.');
     } catch (e) {
-      setError(e?.message || 'Failed to update email.');
+      setError(e.message || 'Failed to update email.');
     } finally {
       setSaving(false);
     }
@@ -93,18 +127,22 @@ export default function ProfilePage() {
     clearAlert();
     if (!canSavePassword) {
       if (!currentPassword) return setError('Enter your current password.');
-      if (!isStrongPassword(newPassword)) return setError('New password must be at least 8 characters.');
+      if (!isStrongPassword(newPassword))
+        return setError('New password must be at least 8 characters.');
       if (newPassword !== confirmPassword) return setError('Passwords do not match.');
     }
     setSaving(true);
     try {
-      // await fetch(`${apiBase}/api/me/password`, { method: 'PUT', ... })
+      await api('/api/users/self/password', {
+        method: 'PUT',
+        body: { currentPassword, newPassword },
+      });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setSuccess('Password changed.');
     } catch (e) {
-      setError(e?.message || 'Failed to change password.');
+      setError(e.message || 'Failed to change password.');
     } finally {
       setSaving(false);
     }
@@ -115,14 +153,19 @@ export default function ProfilePage() {
     if (!canAddDevice) return setError('Enter a valid MAC address.');
     setSaving(true);
     try {
-      // const res = await fetch(`${apiBase}/api/me/devices`, { method: 'POST', body: JSON.stringify({ mac: deviceMac, nickname: deviceNickname }) })
-      const id = Date.now().toString();
-      setDevices((d) => [...d, { id, mac: deviceMac.toUpperCase(), nickname: deviceNickname || '' }]);
+      const created = await api('/api/users/self/devices', {
+        method: 'POST',
+        body: {
+          mac: deviceMac.toUpperCase().trim(),
+          nickname: deviceNickname?.trim() || '',
+        },
+      });
+      setDevices((d) => [...d, created]);
       setDeviceMac('');
       setDeviceNickname('');
       setSuccess('Device added.');
     } catch (e) {
-      setError(e?.message || 'Failed to add device.');
+      setError(e.message || 'Failed to add device.');
     } finally {
       setSaving(false);
     }
@@ -132,11 +175,11 @@ export default function ProfilePage() {
     clearAlert();
     setDeviceBusyId(id);
     try {
-      // await fetch(`${apiBase}/api/me/devices/${id}`, { method: 'DELETE' })
-      setDevices((d) => d.filter((x) => x.id !== id));
+      await api(`/api/users/self/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      setDevices((d) => d.filter((x) => String(x.id) !== String(id)));
       setSuccess('Device removed.');
     } catch (e) {
-      setError(e?.message || 'Failed to remove device.');
+      setError(e.message || 'Failed to remove device.');
     } finally {
       setDeviceBusyId(null);
     }
@@ -149,12 +192,15 @@ export default function ProfilePage() {
     }
     setSaving(true);
     try {
-      // await fetch(`${apiBase}/api/me`, { method: 'DELETE' })
-      setSuccess('Account deletion requested. (Front-end demo)');
+      await api('/api/users/self', { method: 'DELETE' });
+      setSuccess('Account deleted. Redirecting…');
       setShowDeleteModal(false);
       setConfirmText('');
+      setTimeout(() => {
+        window.location.href = '/auth';
+      }, 1000);
     } catch (e) {
-      setError(e?.message || 'Failed to delete account.');
+      setError(e.message || 'Failed to delete account.');
     } finally {
       setSaving(false);
     }
@@ -189,14 +235,24 @@ export default function ProfilePage() {
             <div className="pf-form">
               <div className="pf-field">
                 <label className="pf-label">First Name</label>
-                <input className="pf-input" value={user.firstName} onChange={(e)=>setUser({...user, firstName: e.target.value})} placeholder="First name" />
+                <input
+                  className="pf-input"
+                  value={user.firstName}
+                  onChange={(e) => setUser({ ...user, firstName: e.target.value })}
+                  placeholder="First name"
+                />
               </div>
               <div className="pf-field">
                 <label className="pf-label">Last Name</label>
-                <input className="pf-input" value={user.lastName} onChange={(e)=>setUser({...user, lastName: e.target.value})} placeholder="Last name" />
+                <input
+                  className="pf-input"
+                  value={user.lastName}
+                  onChange={(e) => setUser({ ...user, lastName: e.target.value })}
+                  placeholder="Last name"
+                />
               </div>
               <div className="pf-actions">
-                <button className="pf-btn" disabled={saving} onClick={() => setSuccess('Saved profile (demo).')}>
+                <button className="pf-btn" disabled={saving} onClick={handleSaveProfile}>
                   Save profile
                 </button>
               </div>
@@ -221,7 +277,9 @@ export default function ProfilePage() {
               />
             </div>
             <div className="pf-actions">
-              <button className="pf-btn" disabled={!canSaveEmail || saving} onClick={handleSaveEmail}>Update email</button>
+              <button className="pf-btn" disabled={!canSaveEmail || saving} onClick={handleSaveEmail}>
+                Update email
+              </button>
             </div>
           </div>
         </div>
@@ -235,18 +293,41 @@ export default function ProfilePage() {
           <div className="pf-form">
             <div className="pf-field">
               <label className="pf-label">Current Password</label>
-              <input className="pf-input" type="password" value={currentPassword} onChange={(e)=>setCurrentPassword(e.target.value)} placeholder="••••••••" />
+              <input
+                className="pf-input"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+              />
             </div>
             <div className="pf-field">
               <label className="pf-label">New Password</label>
-              <input className={`pf-input ${newPassword && !isStrongPassword(newPassword) ? 'is-invalid' : ''}`} type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} placeholder="••••••••" />
+              <input
+                className={`pf-input ${newPassword && !isStrongPassword(newPassword) ? 'is-invalid' : ''}`}
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+              />
             </div>
             <div className="pf-field">
               <label className="pf-label">Confirm New Password</label>
-              <input className={`pf-input ${confirmPassword && confirmPassword !== newPassword ? 'is-invalid' : ''}`} type="password" value={confirmPassword} onChange={(e)=>setConfirmPassword(e.target.value)} placeholder="••••••••" />
+              <input
+                className={`pf-input ${confirmPassword && confirmPassword !== newPassword ? 'is-invalid' : ''}`}
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+              />
             </div>
             <div className="pf-actions">
-              <button className="pf-btn" disabled={!canSavePassword || saving} onClick={handleSavePassword}>Update password</button>
+              <button className="pf-btn" disabled={!canSavePassword || saving} onClick={handleSavePassword}>
+                Update password
+              </button>
             </div>
           </div>
         </div>
@@ -262,29 +343,32 @@ export default function ProfilePage() {
             <input
               className={`pf-input ${deviceMac && !macRegex.test(deviceMac) ? 'is-invalid' : ''}`}
               value={deviceMac}
-              onChange={(e)=>setDeviceMac(e.target.value)}
+              onChange={(e) => setDeviceMac(e.target.value)}
               placeholder="AA:BB:CC:DD:EE:FF"
             />
             <input
               className="pf-input"
               value={deviceNickname}
-              onChange={(e)=>setDeviceNickname(e.target.value)}
+              onChange={(e) => setDeviceNickname(e.target.value)}
               placeholder="Nickname (optional)"
             />
-            <button className="pf-btn" disabled={!canAddDevice || saving} onClick={handleAddDevice}>Add device</button>
+            <button className="pf-btn" disabled={!canAddDevice || saving} onClick={handleAddDevice}>
+              Add device
+            </button>
           </div>
 
           <div className="pf-device-list">
             {devices.length === 0 ? (
               <div className="pf-empty">No devices yet.</div>
             ) : (
-              devices.map(d => (
+              devices.map((d) => (
                 <div className="pf-device-item" key={d.id}>
                   <div className="pf-device-meta">
                     <div className="pf-device-title">{d.nickname || 'Unnamed device'}</div>
                     <div className="pf-device-sub">{d.mac}</div>
                   </div>
-                  <button className="pf-btn pf-btn-danger"
+                  <button
+                    className="pf-btn pf-btn-danger"
                     disabled={deviceBusyId === d.id}
                     onClick={() => handleRemoveDevice(d.id)}
                   >
@@ -302,7 +386,9 @@ export default function ProfilePage() {
             <div className="ft-panel-title">Danger Zone</div>
             <div className="ft-panel-sub">Delete your account permanently</div>
           </div>
-          <button className="pf-btn pf-btn-danger" onClick={() => setShowDeleteModal(true)}>Delete account</button>
+          <button className="pf-btn pf-btn-danger" onClick={() => setShowDeleteModal(true)}>
+            Delete account
+          </button>
         </div>
       </div>
 
@@ -316,12 +402,18 @@ export default function ProfilePage() {
             <input
               className="pf-input"
               value={confirmText}
-              onChange={(e)=>setConfirmText(e.target.value)}
+              onChange={(e) => setConfirmText(e.target.value)}
               placeholder="Type DELETE"
             />
             <div className="pf-actions pf-modal-actions">
-              <button className="pf-btn" onClick={() => setShowDeleteModal(false)}>Cancel</button>
-              <button className="pf-btn pf-btn-danger" disabled={saving || confirmText !== 'DELETE'} onClick={handleDeleteAccount}>
+              <button className="pf-btn" onClick={() => setShowDeleteModal(false)}>
+                Cancel
+              </button>
+              <button
+                className="pf-btn pf-btn-danger"
+                disabled={saving || confirmText !== 'DELETE'}
+                onClick={handleDeleteAccount}
+              >
                 {saving ? 'Deleting…' : 'Delete'}
               </button>
             </div>
