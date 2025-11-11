@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import './FloorDashboard.css';
 import APMapParsed from './APMapParsed.jsx';
 import ZoomableMap from './ZoomableMap.jsx';
-
+import UserMenu from './components/UserMenu.jsx';
 import logo from './assets/logo.png';
 import devicesImg from './assets/devices.svg';
 import occupancyImg from './assets/occupancy.svg';
@@ -10,6 +10,17 @@ import activeAPImg from './assets/activeAP.svg';
 import floorStatusImg from './assets/floorStatus.svg';
 
 const API_BASE = 'http://localhost:3000';
+async function api(path, opts = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || 'Request failed');
+  return data;
+}
+
 const VIEWBOX = { w: 1355, h: 1016 };
 
 const COLORS = { low: '#2DD4BF', medium: '#F59E0B', high: '#EF4444' };
@@ -19,6 +30,7 @@ export default function FloorDashboard() {
   const [floorId, setFloorId] = useState(1);
   const [floorName, setFloorName] = useState('Floor 1');
   const [buildingName, setBuildingName] = useState('');
+  const [profile, setProfile] = useState(null);
 
   const [stats, setStats] = useState({
     totalDevices: 0,
@@ -29,6 +41,32 @@ export default function FloorDashboard() {
 
   const [apCount, setApCount] = useState([]); // [{apId,title,cx,cy,deviceCount}]
   const [floorMapUrl, setFloorMapUrl] = useState(null);
+
+  //0) Fetch User data
+  useEffect(() => {
+    (async () => {
+      try {
+        const p = await api('/api/profile'); // use profile endpoint
+        setProfile(p);
+      } catch (e) {
+        console.log('profile load failed', e);
+      }
+    })();
+  }, []);
+
+  const onLogout = async () => {
+    try {
+      await api('/api/logout', { method: 'POST' });
+      window.location.href = '/';
+    } catch (e) {
+      console.log('logout failed', e);
+    }
+  };
+
+  const roleName = profile?.user?.role?.name || '';
+  const canSeeAdmin = roleName === 'Owner' || roleName === 'Organisation Admin' || roleName === 'Site Admin';
+  const displayName = `${profile?.user?.firstName || ''} ${profile?.user?.lastName || ''}`.trim();
+
 
   // 1) Fetch floors list with building names (dynamic options)
   useEffect(() => {
@@ -144,12 +182,16 @@ export default function FloorDashboard() {
           <div className="ft-brand-icon"><img src={logo} className="ft-brand-icon" /></div>
           <div className="ft-brand-text">FloorTrack</div>
         </div>
-        <div>
-          <a href="/admin" className="ft-live-btn">Admin</a>
-          <a href="/profile" className="ft-live-btn">Profile</a>
-        </div>
-        <button className="ft-live-btn"><span className="ft-dot" />Live</button>
+
+        {/* Replace Live button with user menu */}
+        <UserMenu
+          onLogout={onLogout}
+          canSeeAdmin={canSeeAdmin}
+          email={profile?.user?.email}
+          name={displayName}
+        />
       </div>
+
 
       {/* Stats Row */}
       <div className="ft-stats-row">
@@ -232,7 +274,7 @@ export default function FloorDashboard() {
             </div>
           </div>
         </div>
-      </div>  
+      </div>
     </div>
   );
 }

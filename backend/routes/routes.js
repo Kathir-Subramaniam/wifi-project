@@ -365,6 +365,35 @@ router.delete('/api/admin/devices/:id', verifyToken, async (req, res) => {
   }
 });
 
+router.get('/api/profile', verifyToken, async (req, res) => {
+  try {
+    const u = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      include: {
+        role: true,
+        userGroups: { include: { group: true } }, // optional; remove if you don’t need it
+      },
+    });
+    if (!u) return res.status(403).json({ error: 'Unauthorized' });
+
+    res.json({
+      user: {
+        id: u.id.toString(),
+        email: u.email,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        role: u.role ? { id: u.role.id.toString(), name: u.role.name } : null,
+        // include more fields as needed, but keep it BigInt-safe:
+        // groups: u.userGroups?.map(g => ({ id: g.group.id.toString(), name: g.group.name })) ?? [],
+      }
+    });
+  } catch (e) {
+    console.error('GET /api/profile failed', e);
+    res.status(500).json({ error: 'Failed to load profile' });
+  }
+});
+
+
 // In server.js (or routes):
 router.put('/api/profile', verifyToken, async (req, res) => {
   try {
