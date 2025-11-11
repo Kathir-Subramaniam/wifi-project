@@ -7,18 +7,20 @@
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import AuthPage from './AuthPage';
 import FloorDashboard from './FloorDashboard';
+import AdminDashboard from './AdminDashboard';
 
 function AuthRoute() {
   const navigate = useNavigate();
-  return <AuthPage onAuthed={() => navigate('/')} />;
+  return <AuthPage onAuthed={() => navigate('/home')} />;
 }
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/auth" element={<AuthRoute />} />
-        <Route path="/" element={<FloorDashboard />} />
+        <Route path="/" element={<AuthRoute />} />
+        <Route path="/home" element={<FloorDashboard />} />
+        <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
     </BrowserRouter>
   );
