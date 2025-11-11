@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import './FloorDashboard.css';
 import './AuthPage.css';
+import logo from './assets/logo.png';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
 
@@ -152,11 +153,13 @@ export default function ProfilePage() {
       {/* App bar */}
       <div className="ft-appbar">
         <div className="ft-brand">
-          <div className="ft-brand-icon" />
+          <a href= "/home">
+          <div className="ft-brand-icon"><img src={logo} className="ft-brand-icon" /></div>
+          </a>
           <div className="ft-brand-text">Profile</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <a className="ft-live-btn" href="/">Dashboard</a>
+          <a className="ft-live-btn" href="/home">Dashboard</a>
           <a className="ft-live-btn" href="/admin">Admin</a>
         </div>
       </div>

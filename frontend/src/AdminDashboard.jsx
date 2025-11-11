@@ -381,7 +381,7 @@ export default function AdminDashboard() {
            </a>
           <div className="ft-brand-text">Admin</div>
         </div>
-        <a href="/" className="ft-live-btn">Dashboard</a>
+        <a href="/home" className="ft-live-btn">Dashboard</a>
       </div>
 
       <div className="auth-tabs" style={{ marginBottom: 16 }}>
