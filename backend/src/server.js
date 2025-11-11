@@ -249,7 +249,7 @@ const prisma = new PrismaClient();
 const app = express();
 const port = process.env.PORT || 3000;
 
-const router = require('../routes');
+const router = require('../routes/routes');
 const verifyToken = require('../middleware');
 const { toJSONSafe } = require('../utils/jsonBigInt');
 

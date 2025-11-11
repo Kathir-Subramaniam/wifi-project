@@ -4,10 +4,10 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-const firebaseAuthController = require('../controllers/firebase-auth-controller');
-const verifyToken = require('../middleware');
+const firebaseAuthController = require('../controllers/firebase-auth-controller.js');
+const verifyToken = require('../middleware/index.js');
 const PostsController = require('../controllers/posts-controller.js');
-const { getAppUser, canManageBuilding, canManageFloor } = require('../controllers/rbac');
+const { getAppUser, canManageBuilding, canManageFloor } = require('../controllers/rbac.js');
 
 // Helpers
 const toBi = (v) => {
