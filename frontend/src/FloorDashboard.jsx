@@ -144,6 +144,7 @@ export default function FloorDashboard() {
           <div className="ft-brand-icon"><img src={logo} className="ft-brand-icon" /></div>
           <div className="ft-brand-text">FloorTrack</div>
         </div>
+        <a href="/admin" className="ft-live-btn">Admin</a>
         <button className="ft-live-btn"><span className="ft-dot" />Live</button>
       </div>
 
