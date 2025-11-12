@@ -66,7 +66,7 @@ export default function FloorDashboard() {
   };
 
   const roleName = profile?.user?.role?.name || '';
-  const canSeeAdmin = roleName === 'Owner' || roleName === 'Organisation Admin' || roleName === 'Site Admin';
+  const canSeeAdmin = roleName === 'Owner' || roleName === 'Organization Admin' || roleName === 'Site Admin';
   const displayName = `${profile?.user?.firstName || ''} ${profile?.user?.lastName || ''}`.trim();
 
 
