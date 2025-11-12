@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './FloorDashboard.css';
 import APMapParsed from './APMapParsed.jsx';
 import ZoomableMap from './ZoomableMap.jsx';
@@ -20,6 +21,7 @@ async function api(path, opts = {}) {
   if (!res.ok) throw new Error(data?.error || 'Request failed');
   return data;
 }
+
 
 const VIEWBOX = { w: 1355, h: 1016 };
 
