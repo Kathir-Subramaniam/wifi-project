@@ -74,7 +74,7 @@ export default function FloorDashboard() {
   useEffect(() => {
     async function fetchFloors() {
       try {
-        const res = await fetch(`${API_BASE}/api/floors`);
+        const res = await fetch(`${API_BASE}/api/floors`, {credentials: 'include', headers: { 'Content-Type': 'application/json' }});
         const data = await res.json();
         if (Array.isArray(data)) {
           setFloors(data);
@@ -100,12 +100,21 @@ export default function FloorDashboard() {
 
     async function fetchAll() {
       try {
+        // const [devicesRes, apsRes, apsCountRes, floorRes, buildingRes] = await Promise.all([
+        //   fetch(`${API_BASE}/api/stats/total-devices`),
+        //   fetch(`${API_BASE}/api/stats/total-aps`),
+        //   fetch(`${API_BASE}/api/stats/devices-by-ap?floorId=${floorId}`),
+        //   fetch(`${API_BASE}/api/floors/${floorId}`),
+        //   fetch(`${API_BASE}/api/floors/${floorId}/building`),
+        // ]);
+
+        const creds = { credentials: 'include', headers: { 'Content-Type': 'application/json' } };
         const [devicesRes, apsRes, apsCountRes, floorRes, buildingRes] = await Promise.all([
-          fetch(`${API_BASE}/api/stats/total-devices`),
-          fetch(`${API_BASE}/api/stats/total-aps`),
-          fetch(`${API_BASE}/api/stats/devices-by-ap?floorId=${floorId}`),
-          fetch(`${API_BASE}/api/floors/${floorId}`),
-          fetch(`${API_BASE}/api/floors/${floorId}/building`),
+          fetch(`${ API_BASE }/api/stats/total-devices`, creds),
+          fetch(`${ API_BASE }/api/stats/total-aps`, creds),
+          fetch(`${ API_BASE }/api/stats/devices-by-ap?floorId=${ floorId }`, creds),
+          fetch(`${ API_BASE }/api/floors/${ floorId }`, creds),
+          fetch(`${ API_BASE }/api/floors/${ floorId }/building`, creds),
         ]);
 
         const devicesData = await devicesRes.json();
