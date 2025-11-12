@@ -230,6 +230,11 @@ async function api(path, opts = {}) {
   return data;
 }
 
+async function fetchFloorDetail(floorId) {
+  // Returns { id, name, svgMap }
+  return api(`/api/floors/${floorId}`);
+}
+
 export default function AdminDashboard() {
   const [tab, setTab] = useState('buildings');
   const [buildings, setBuildings] = useState([]);
@@ -377,8 +382,8 @@ export default function AdminDashboard() {
       <div className="ft-appbar">
         <div className="ft-brand">
           <a href="/home">
-           <div className="ft-brand-icon"><img src={logo} className="ft-brand-icon" /></div>
-           </a>
+            <div className="ft-brand-icon"><img src={logo} className="ft-brand-icon" /></div>
+          </a>
           <div className="ft-brand-text">Admin</div>
         </div>
         <a href="/home" className="ft-live-btn">Dashboard</a>
@@ -446,7 +451,7 @@ export default function AdminDashboard() {
           {/* Create */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 12 }}>
             <input className="auth-input" placeholder="Floor name" value={fName} onChange={e => setFName(e.target.value)} />
-            <input className="auth-input" placeholder="SVG map (URL or SVG text)" value={fSvg} onChange={e => setFSvg(e.target.value)} />
+            <input className="auth-input" placeholder="SVG map (Raw SVG text)" value={fSvg} onChange={e => setFSvg(e.target.value)} />
             <select className="auth-input" value={fBuildingId} onChange={e => setFBuildingId(e.target.value)}>
               <option value="">Select building</option>
               {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -457,22 +462,73 @@ export default function AdminDashboard() {
           {/* List + edit */}
           {floors.map(f => {
             const editing = editFloor[f.id] || null;
+
+            const startEdit = async () => {
+              try {
+                setBusy(true);
+                // Load full svgMap from detail endpoint
+                const detail = await fetchFloorDetail(f.id);
+                // detail.svgMap might be URL or raw SVG text; we display the raw text or URL string
+                setEditFloor(prev => ({
+                  ...prev,
+                  [f.id]: { name: f.name, svgMap: detail?.svgMap ?? '' }
+                }));
+              } catch (e) {
+                setError(e.message);
+              } finally {
+                setBusy(false);
+              }
+            };
+
             return (
-              <div key={f.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={f.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 {editing ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center', width: '100%' }}>
-                    <input className="auth-input" value={editing.name ?? f.name} onChange={e => setEditFloor(prev => ({ ...prev, [f.id]: { ...editing, name: e.target.value } }))} />
-                    <input className="auth-input" placeholder="SVG map" value={editing.svgMap ?? ''} onChange={e => setEditFloor(prev => ({ ...prev, [f.id]: { ...editing, svgMap: e.target.value } }))} />
-                    <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => saveFloor(f.id)}>Save</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => setEditFloor(prev => { const p = { ...prev }; delete p[f.id]; return p; })}>Cancel</button>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, width: '100%' }}>
+                    {/* Name edit */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
+                      <input
+                        className="auth-input"
+                        value={editing.name ?? f.name}
+                        onChange={e => setEditFloor(prev => ({ ...prev, [f.id]: { ...editing, name: e.target.value } }))}
+                        placeholder="Floor name"
+                      />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="auth-submit-btn" disabled={busy} onClick={() => saveFloor(f.id)}>Save</button>
+                        <button className="auth-submit-btn" disabled={busy} onClick={() => setEditFloor(prev => { const p = { ...prev }; delete p[f.id]; return p; })}>Cancel</button>
+                      </div>
+                    </div>
+
+                    {/* SVG edit */}
+                    <div>
+                      <div className="ft-legend-sub" style={{ marginBottom: 6 }}>SVG map (Raw SVG)</div>
+                      <textarea
+                        className="auth-input"
+                        style={{
+                          minHeight: 180,
+                          resize: 'vertical',
+                          background: '#0A1620',
+                          border: '1px solid #223042',
+                          borderRadius: 10,
+                          color: '#E6EDF3',
+                          padding: 12
+                        }}
+                        value={editing.svgMap ?? ''}
+                        onChange={e => setEditFloor(prev => ({ ...prev, [f.id]: { ...editing, svgMap: e.target.value } }))}
+                        placeholder="<svg ...>...</svg> or https://example.com/map.svg"
+                      />
                     </div>
                   </div>
                 ) : (
                   <>
-                    <div>{f.name} — {f.buildingName || `B#${f.buildingId}`} (#{f.id})</div>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{f.name} — {f.buildingName || `B#${f.buildingId}`} (#{f.id})</div>
+                      <div className="ft-legend-sub" style={{ marginTop: 6 }}>
+                        SVG: { /* show a compact hint of svgMap availability; fetch on edit for full content */}
+                        <span style={{ opacity: 0.8 }}>Click Edit to view and modify the SVG map</span>
+                      </div>
+                    </div>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => setEditFloor(prev => ({ ...prev, [f.id]: { name: f.name, svgMap: '' } }))}>Edit</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={startEdit}>Edit</button>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('floors', f.id)}>Delete</button>
                     </div>
                   </>
