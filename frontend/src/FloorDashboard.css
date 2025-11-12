@@ -367,6 +367,21 @@ select.auth-input {
   height: 38px;
 }
 
+/* Sortbar */
+.ft-sortbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #0A1620;
+  border: 1px solid #223042;
+  padding: 8px 10px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+.ft-sortbar .auth-input {
+  padding: 8px 10px;
+  height: 36px;
+}
 
 /* Responsive */
 

@@ -62,6 +62,55 @@ function FilePicker({ onPick, label = 'Upload SVG', accept = '.svg,image/svg+xml
   );
 }
 
+// Generic comparator builder
+function by(getter, dir = 'asc') {
+  return (a, b) => {
+    const av = getter(a);
+    const bv = getter(b);
+    if (av == null && bv != null) return dir === 'asc' ? 1 : -1;
+    if (av != null && bv == null) return dir === 'asc' ? -1 : 1;
+    if (av == null && bv == null) return 0;
+    if (typeof av === 'number' && typeof bv === 'number') {
+      return dir === 'asc' ? av - bv : bv - av;
+    }
+    const as = String(av).toLowerCase();
+    const bs = String(bv).toLowerCase();
+    if (as < bs) return dir === 'asc' ? -1 : 1;
+    if (as > bs) return dir === 'asc' ? 1 : -1;
+    return 0;
+  };
+}
+
+// Stable multi-sort
+function sortWith(list, ...comparators) {
+  if (!Array.isArray(list)) return [];
+  const cmp = (a, b) => {
+    for (const c of comparators) {
+      const r = c(a, b);
+      if (r !== 0) return r;
+    }
+    return 0;
+  };
+  return [...list].sort(cmp);
+}
+
+// Reusable sort bar
+function SortBar({ fields, value, order, onField, onOrder }) {
+  return (
+    <div className="ft-sortbar">
+      <div className="ft-legend-sub">Sort by</div>
+      <select className="auth-input" value={value} onChange={e => onField(e.target.value)}>
+        {fields.map(f => (
+          <option key={f.value} value={f.value}>{f.label}</option>
+        ))}
+      </select>
+      <select className="auth-input" value={order} onChange={e => onOrder(e.target.value)}>
+        <option value="asc">Asc</option>
+        <option value="desc">Desc</option>
+      </select>
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const [tab, setTab] = useState('buildings');
@@ -71,6 +120,70 @@ export default function AdminDashboard() {
   const [devices, setDevices] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Sort state per tab
+  const [sortBuildings, setSortBuildings] = useState({ field: 'name', order: 'asc' });
+  const [sortFloors, setSortFloors] = useState({ field: 'buildingName', order: 'asc' });
+  const [sortAPs, setSortAPs] = useState({ field: 'buildingId', order: 'asc' });
+  const [sortDevices, setSortDevices] = useState({ field: 'apId', order: 'asc' });
+
+  // Sorted views (computed each render)
+  const buildingsSorted = sortWith(
+    buildings,
+    by(b => (sortBuildings.field === 'name' ? b.name : Number(b.id)), sortBuildings.order),
+    by(b => Number(b.id), 'asc') // tiebreaker
+  );
+
+  const floorsSorted = sortWith(
+    floors,
+    // primary by selected
+    ...(function () {
+      const f = sortFloors.field;
+      const ord = sortFloors.order;
+      if (f === 'name') return [by(x => x.name, ord)];
+      if (f === 'id') return [by(x => Number(x.id), ord)];
+      if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
+      // default: buildingName (fallback to buildingId if missing)
+      return [by(x => x.buildingName || '', ord), by(x => Number(x.buildingId), ord)];
+    })(),
+    // secondary sorts for determinism
+    by(x => x.name, 'asc'),
+    by(x => Number(x.id), 'asc')
+  );
+
+  const apsSorted = sortWith(
+    aps,
+    ...(function () {
+      const f = sortAPs.field;
+      const ord = sortAPs.order;
+      if (f === 'name') return [by(x => x.name, ord)];
+      if (f === 'id') return [by(x => Number(x.id), ord)];
+      if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
+      if (f === 'cx') return [by(x => Number(x.cx), ord)];
+      if (f === 'cy') return [by(x => Number(x.cy), ord)];
+      // default buildingId
+      return [by(x => Number(x.buildingId), ord)];
+    })(),
+    by(x => Number(x.floorId), 'asc'),
+    by(x => x.name, 'asc'),
+    by(x => Number(x.id), 'asc')
+  );
+
+  const devicesSorted = sortWith(
+    devices,
+    ...(function () {
+      const f = sortDevices.field;
+      const ord = sortDevices.order;
+      if (f === 'id') return [by(x => Number(x.id), ord)];
+      if (f === 'mac') return [by(x => x.mac, ord)];
+      if (f === 'apId') return [by(x => Number(x.apId), ord)];
+      if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
+      if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
+      return [by(x => Number(x.apId), ord)];
+    })(),
+    by(x => x.mac, 'asc'),
+    by(x => Number(x.id), 'asc')
+  );
+
 
   const reload = async () => {
     setError(null);
@@ -229,11 +342,25 @@ export default function AdminDashboard() {
       {/* Buildings */}
       {tab === 'buildings' && (
         <div className="ft-panel">
-          <div className="ft-panel-header">
-            <div className="ft-panel-title">Buildings</div>
-            <div className="ft-panel-sub">Create, edit, or delete buildings</div>
-          </div>
+          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div className="ft-panel-title">Buildings</div>
+              <div className="ft-panel-sub">Create, edit, or delete buildings</div>
+            </div>
+            <SortBar
+              fields={[
+                { value: 'name', label: 'Name' },
+                { value: 'id', label: 'ID' },
+              ]}
+              value={sortBuildings.field}
+              order={sortBuildings.order}
+              onField={v => setSortBuildings(s => ({ ...s, field: v }))}
+              onOrder={v => setSortBuildings(s => ({ ...s, order: v }))}
+            />
 
+          </div>
+          <div>
+          </div>
           {/* Create */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <input className="auth-input" placeholder="Building name" value={bName} onChange={e => setBName(e.target.value)} />
@@ -241,7 +368,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* List + edit */}
-          {buildings.map(b => {
+          {buildingsSorted.map(b => {
             const editing = editBuilding[b.id] || null;
             return (
               <div key={b.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -271,9 +398,24 @@ export default function AdminDashboard() {
       {/* Floors */}
       {tab === 'floors' && (
         <div className="ft-panel">
-          <div className="ft-panel-header">
-            <div className="ft-panel-title">Floors</div>
-            <div className="ft-panel-sub">Create, edit, or delete floors</div>
+          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div className="ft-panel-title">Floors</div>
+              <div className="ft-panel-sub">Create, edit, or delete floors</div>
+            </div>
+            <SortBar
+              fields={[
+                { value: 'buildingName', label: 'Building name' },
+                { value: 'buildingId', label: 'Building ID' },
+                { value: 'name', label: 'Floor name' },
+                { value: 'id', label: 'Floor ID' },
+              ]}
+              value={sortFloors.field}
+              order={sortFloors.order}
+              onField={v => setSortFloors(s => ({ ...s, field: v }))}
+              onOrder={v => setSortFloors(s => ({ ...s, order: v }))}
+            />
+
           </div>
 
           {/* Create */}
@@ -315,7 +457,7 @@ export default function AdminDashboard() {
 
 
           {/* List + edit */}
-          {floors.map(f => {
+          {floorsSorted.map(f => {
             const editing = editFloor[f.id] || null;
 
             const startEdit = async () => {
@@ -423,9 +565,26 @@ export default function AdminDashboard() {
       {/* APs */}
       {tab === 'aps' && (
         <div className="ft-panel">
-          <div className="ft-panel-header">
-            <div className="ft-panel-title">Access Points</div>
-            <div className="ft-panel-sub">Create, edit, or delete APs</div>
+          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div className="ft-panel-title">Access Points</div>
+              <div className="ft-panel-sub">Create, edit, or delete APs</div>
+            </div>
+            <SortBar
+              fields={[
+                { value: 'buildingId', label: 'Building ID' },
+                { value: 'floorId', label: 'Floor ID' },
+                { value: 'name', label: 'AP name' },
+                { value: 'id', label: 'AP ID' },
+                { value: 'cx', label: 'cx' },
+                { value: 'cy', label: 'cy' },
+              ]}
+              value={sortAPs.field}
+              order={sortAPs.order}
+              onField={v => setSortAPs(s => ({ ...s, field: v }))}
+              onOrder={v => setSortAPs(s => ({ ...s, order: v }))}
+            />
+
           </div>
 
           {/* Create */}
@@ -441,7 +600,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* List + edit */}
-          {aps.map(a => {
+          {apsSorted.map(a => {
             const editing = editAP[a.id] || null;
             return (
               <div key={a.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -473,9 +632,25 @@ export default function AdminDashboard() {
       {/* Devices */}
       {tab === 'devices' && (
         <div className="ft-panel">
-          <div className="ft-panel-header">
-            <div className="ft-panel-title">Devices</div>
-            <div className="ft-panel-sub">Attach devices (clients) to APs</div>
+          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div className="ft-panel-title">Devices</div>
+              <div className="ft-panel-sub">Attach devices (clients) to APs</div>
+            </div>
+            <SortBar
+              fields={[
+                { value: 'apId', label: 'AP ID' },
+                { value: 'floorId', label: 'Floor ID' },
+                // { value: 'buildingId', label: 'Building ID' }, // enable once API includes buildingId
+                { value: 'mac', label: 'MAC' },
+                { value: 'id', label: 'Device ID' },
+              ]}
+              value={sortDevices.field}
+              order={sortDevices.order}
+              onField={v => setSortDevices(s => ({ ...s, field: v }))}
+              onOrder={v => setSortDevices(s => ({ ...s, order: v }))}
+            />
+
           </div>
 
           {/* Create */}
@@ -489,7 +664,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* List + edit */}
-          {devices.map(d => {
+          {devicesSorted.map(d => {
             const editing = editDevice[d.id] || null;
             return (
               <div key={d.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
