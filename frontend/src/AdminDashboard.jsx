@@ -94,20 +94,114 @@ function sortWith(list, ...comparators) {
   return [...list].sort(cmp);
 }
 
-// Reusable sort bar
+function SortDropdown({ fields, value, order, onChange }) {
+  // value: current field, order: 'asc'|'desc'
+  const [open, setOpen] = React.useState(false);
+  const btnRef = React.useRef(null);
+  const menuRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const onDocClick = (e) => {
+      if (!open) return;
+      if (
+        menuRef.current && !menuRef.current.contains(e.target) &&
+        btnRef.current && !btnRef.current.contains(e.target)
+      ) setOpen(false);
+    };
+    const onEsc = (e) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+
+  const currentFieldLabel = fields.find(f => f.value === value)?.label || fields[0]?.label || 'Sort';
+  const currentOrderLabel = order === 'desc' ? 'Descending' : 'Ascending';
+
+  return (
+    <div className="ft-sort-dd">
+      <button
+        ref={btnRef}
+        type="button"
+        className="auth-submit-btn ft-sort-trigger"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        {currentFieldLabel} • {currentOrderLabel}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ marginLeft: 6, opacity: 0.8 }}>
+          <path d="M7 10l5 5 5-5" stroke="#CDE8FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div ref={menuRef} role="menu" className="ft-sort-menu">
+          <div className="ft-sort-section">
+            <div className="ft-legend-sub" style={{ padding: '6px 10px' }}>Field</div>
+            {fields.map(f => {
+              const selected = f.value === value;
+              return (
+                <button
+                  key={f.value}
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  className={`ft-sort-item ${selected ? 'selected' : ''}`}
+                  onClick={() => onChange({ field: f.value, order })}
+                >
+                  <span className="ft-sort-check">{selected ? '✓' : ''}</span>
+                  <span>{f.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="ft-sort-divider" />
+
+          <div className="ft-sort-section">
+            <div className="ft-legend-sub" style={{ padding: '6px 10px' }}>Order</div>
+            {[
+              { v: 'asc', label: 'Ascending' },
+              { v: 'desc', label: 'Descending' },
+            ].map(o => {
+              const selected = o.v === order;
+              return (
+                <button
+                  key={o.v}
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  className={`ft-sort-item ${selected ? 'selected' : ''}`}
+                  onClick={() => onChange({ field: value, order: o.v })}
+                >
+                  <span className="ft-sort-check">{selected ? '✓' : ''}</span>
+                  <span>{o.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SortBar({ fields, value, order, onField, onOrder }) {
+  // Wrap unified onChange to update both parts
+  const handleChange = ({ field, order }) => {
+    onField(field);
+    onOrder(order);
+  };
+
   return (
     <div className="ft-sortbar">
-      <div className="ft-legend-sub">Sort by</div>
-      <select className="auth-input" value={value} onChange={e => onField(e.target.value)}>
-        {fields.map(f => (
-          <option key={f.value} value={f.value}>{f.label}</option>
-        ))}
-      </select>
-      <select className="auth-input" value={order} onChange={e => onOrder(e.target.value)}>
-        <option value="asc">Asc</option>
-        <option value="desc">Desc</option>
-      </select>
+      <div className="ft-legend-sub">Sort</div>
+      <SortDropdown
+        fields={fields}
+        value={value}
+        order={order}
+        onChange={handleChange}
+      />
     </div>
   );
 }
@@ -419,10 +513,13 @@ export default function AdminDashboard() {
           </div>
 
           {/* Create */}
-          <div className="ft-row gap" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px  1fr auto', marginBottom: 12 }}>
+          <div className="ft-row gap" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', marginBottom: 12 }}>
             <input className="auth-input" placeholder="Floor name" value={fName} onChange={e => setFName(e.target.value)} />
+            <select className="auth-input" value={fBuildingId} onChange={e => setFBuildingId(e.target.value)}>
+              <option value="">Select building</option>
+              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
             <input className="auth-input" placeholder="SVG map (Raw SVG text)" value={fSvg} onChange={e => setFSvg(e.target.value)} />
-
             <FilePicker
               disabled={busy}
               label="Upload SVG"
@@ -443,11 +540,6 @@ export default function AdminDashboard() {
                 }
               }}
             />
-
-            <select className="auth-input" value={fBuildingId} onChange={e => setFBuildingId(e.target.value)}>
-              <option value="">Select building</option>
-              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
             <button className="auth-submit-btn" disabled={busy || !fName || !fSvg || !fBuildingId} onClick={() => onCreateFloor(fName, fSvg, fBuildingId)}>Add</button>
           </div>
 
