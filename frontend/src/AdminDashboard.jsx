@@ -272,6 +272,23 @@ function UserMenu({ email, name, onLogout }) {
   );
 }
 
+// Themed confirmation modal
+function ConfirmModal({ open, title = 'Confirm', body, confirmText = 'Confirm', cancelText = 'Cancel', onConfirm, onCancel }) {
+  if (!open) return null;
+  return (
+    <div role="dialog" aria-modal="true" className="ft-modal">
+      <div className="ft-modal-card">
+        <div className="ft-modal-title">{title}</div>
+        <div className="ft-modal-body">{body}</div>
+        <div className="ft-actions" style={{ justifyContent: 'flex-end' }}>
+          <button className="auth-submit-btn" onClick={onCancel}>{cancelText}</button>
+          <button className="auth-submit-btn" onClick={onConfirm} style={{ marginLeft: 8 }}>{confirmText}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const [tab, setTab] = useState('buildings');
   const [buildings, setBuildings] = useState([]);
@@ -282,26 +299,20 @@ export default function AdminDashboard() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
 
-  const confirmAction = async (promptText) => {
-    // You can swap this with a custom modal later
-    return window.confirm(promptText);
-  };
+  // Modal state for deletes
+  const [confirmState, setConfirmState] = useState(null);
+  // confirmState = { kind: 'buildings'|'floors'|'aps'|'devices', id: string|number }
 
-  // auto-clear success messages after a short time
   useEffect(() => {
     if (!message) return;
     const t = setTimeout(() => setMessage(null), 2500);
     return () => clearTimeout(t);
   }, [message]);
 
-
-  // Floors: editor state kept in a separate map to avoid hooks-in-loop
+  // Floors edit state
   const [floorEditMap, setFloorEditMap] = useState({}); // { [id]: { name, svgMap, __fileName, __error } }
-
-  // Debounce store: per-floor timers to debounce svgMap updates
   const floorDebounceTimers = useRef({}); // { [id]: number }
 
-  // Helper to set floor editor fields safely
   const setFloorEditField = (id, patch) => {
     setFloorEditMap(prev => {
       const cur = prev[id] || {};
@@ -309,11 +320,9 @@ export default function AdminDashboard() {
     });
   };
 
-  // Start editing a floor: fetch detail once, then populate editor map
   const beginEditFloor = async (f) => {
     const id = f?.id;
     if (!id) return;
-    // Optimistically put name and empty svgMap while we load
     setFloorEditMap(prev => ({
       ...prev,
       [id]: { name: f.name || '', svgMap: prev[id]?.svgMap ?? '', __fileName: null, __error: null }
@@ -327,20 +336,17 @@ export default function AdminDashboard() {
     }
   };
 
-  // Debounced svgMap update for floor id
   const debouncedSetFloorSvg = (id, value) => {
-    // clear previous timer
     if (floorDebounceTimers.current[id]) {
       clearTimeout(floorDebounceTimers.current[id]);
     }
-    // set new timer
     floorDebounceTimers.current[id] = setTimeout(() => {
       setFloorEditField(id, { svgMap: value });
       delete floorDebounceTimers.current[id];
     }, 300);
   };
 
-
+  // Sorting
   const [sortBuildings, setSortBuildings] = useState({ field: 'name', order: 'asc' });
   const [sortFloors, setSortFloors] = useState({ field: 'buildingName', order: 'asc' });
   const [sortAPs, setSortAPs] = useState({ field: 'buildingId', order: 'asc' });
@@ -423,11 +429,13 @@ export default function AdminDashboard() {
 
   useEffect(() => { reload(); }, []);
 
-  // Create handlers
+  // Create handlers with success messages and clearing inputs
   const onCreateBuilding = async (name) => {
     setBusy(true); setError(null);
     try {
       await api('/api/admin/buildings', { method: 'POST', body: JSON.stringify({ name }) });
+      setMessage('Building created');
+      setBName(''); // clear input
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -435,6 +443,9 @@ export default function AdminDashboard() {
     setBusy(true); setError(null);
     try {
       await api('/api/admin/floors', { method: 'POST', body: JSON.stringify({ name, svgMap, buildingId }) });
+      setMessage('Floor created');
+      setFName(''); setFSvg(''); setFBuildingId(''); // clear inputs
+      setEditFloor(prev => ({ ...prev, __createFile__: null })); // clear badge
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -442,6 +453,8 @@ export default function AdminDashboard() {
     setBusy(true); setError(null);
     try {
       await api('/api/admin/aps', { method: 'POST', body: JSON.stringify({ name, cx: Number(cx), cy: Number(cy), floorId }) });
+      setMessage('AP created');
+      setApName(''); setApCx(''); setApCy(''); setApFloorId(''); // clear inputs
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -449,15 +462,27 @@ export default function AdminDashboard() {
     setBusy(true); setError(null);
     try {
       await api('/api/admin/devices', { method: 'POST', body: JSON.stringify({ mac, apId }) });
+      setMessage('Device added');
+      setDevMac(''); setDevApId(''); // clear inputs
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
-  // Delete
-  const onDelete = async (kind, id) => {
+  // Delete using modal
+  const requestDelete = (kind, id) => {
+    setConfirmState({ kind, id });
+  };
+
+  const performDelete = async () => {
+    if (!confirmState) return;
+    const { kind, id } = confirmState;
+    const singular = kind.slice(0, -1);
+    setConfirmState(null);
+
     setBusy(true); setError(null);
     try {
       await api(`/api/admin/${kind}/${id}`, { method: 'DELETE' });
+      setMessage(`${singular[0].toUpperCase() + singular.slice(1)} deleted`);
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -468,7 +493,7 @@ export default function AdminDashboard() {
   const [editAP, setEditAP] = useState({});
   const [editDevice, setEditDevice] = useState({});
 
-  // Save edits
+  // Save edits with success messages
   const saveBuilding = async (id) => {
     const payload = editBuilding[id];
     if (!payload) return;
@@ -476,11 +501,12 @@ export default function AdminDashboard() {
     try {
       await api(`/api/admin/buildings/${id}`, { method: 'PUT', body: JSON.stringify({ name: payload.name }) });
       setEditBuilding(prev => { const p = { ...prev }; delete p[id]; return p; });
+      setMessage('Building updated');
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
   const saveFloor = async (id) => {
-    const payload = editFloor[id];
+    const payload = floorEditMap[id] || editFloor[id];
     if (!payload) return;
     setBusy(true); setError(null);
     try {
@@ -488,7 +514,9 @@ export default function AdminDashboard() {
       if (payload.name != null) body.name = payload.name;
       if (payload.svgMap != null) body.svgMap = payload.svgMap;
       await api(`/api/admin/floors/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+      setFloorEditMap(prev => { const p = { ...prev }; delete p[id]; return p; });
       setEditFloor(prev => { const p = { ...prev }; delete p[id]; return p; });
+      setMessage('Floor updated');
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -503,6 +531,7 @@ export default function AdminDashboard() {
       if (payload.cy != null) body.cy = Number(payload.cy);
       await api(`/api/admin/aps/${id}`, { method: 'PUT', body: JSON.stringify(body) });
       setEditAP(prev => { const p = { ...prev }; delete p[id]; return p; });
+      setMessage('AP updated');
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -511,6 +540,7 @@ export default function AdminDashboard() {
     if (!payload) return;
     setBusy(true); setError(null);
     try {
+      // Implement PUT /api/admin/devices/:id to enable edits
       throw new Error('Device edit is not enabled yet. Please implement PUT /api/admin/devices/:id');
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -527,21 +557,21 @@ export default function AdminDashboard() {
   const [devMac, setDevMac] = useState('');
   const [devApId, setDevApId] = useState('');
 
-  // User menu data (optional, simple)
+  // User menu data
   const [profile, setProfile] = useState(null);
   useEffect(() => {
     (async () => {
       try {
         const p = await api('/api/profile');
         setProfile(p);
-      } catch { }
+      } catch {}
     })();
   }, []);
   const onLogout = async () => {
     try {
       await api('/api/logout', { method: 'POST' });
       window.location.href = '/auth';
-    } catch { }
+    } catch {}
   };
   const displayName = `${profile?.user?.firstName || ''} ${profile?.user?.lastName || ''}`.trim();
   const email = profile?.user?.email;
@@ -570,6 +600,7 @@ export default function AdminDashboard() {
       </div>
 
       {error && <div className="auth-alert auth-alert-error" style={{ marginBottom: 12 }}>{String(error)}</div>}
+      {message && <div className="auth-alert auth-alert-success" style={{ marginBottom: 12 }}>{String(message)}</div>}
 
       {/* Buildings */}
       {tab === 'buildings' && (
@@ -605,7 +636,7 @@ export default function AdminDashboard() {
                 {editing ? (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
                     <input className="auth-input" value={editing.name ?? b.name} onChange={e => setEditBuilding(prev => ({ ...prev, [b.id]: { ...editing, name: e.target.value } }))} />
-                    <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                    <div className="ft-actions" style={{ marginLeft: 'auto' }}>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => saveBuilding(b.id)}>Save</button>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditBuilding(prev => { const p = { ...prev }; delete p[b.id]; return p; })}>Cancel</button>
                     </div>
@@ -613,9 +644,9 @@ export default function AdminDashboard() {
                 ) : (
                   <>
                     <div>{b.name} (#{b.id})</div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div className="ft-actions">
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditBuilding(prev => ({ ...prev, [b.id]: { name: b.name } }))}>Edit</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('buildings', b.id)}>Delete</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => requestDelete('buildings', b.id)}>Delete</button>
                     </div>
                   </>
                 )}
@@ -666,7 +697,6 @@ export default function AdminDashboard() {
                   const text = (await readFileAsText(file)).trim();
                   if (!/^<\s*svg[\s>]/i.test(text)) throw new Error('Selected file is not an SVG');
                   setFSvg(text);
-                  // show badge
                   setEditFloor(prev => ({ ...prev, __createFile__: { name: file.name } }));
                 } catch (err) {
                   setError(err.message);
@@ -702,20 +732,7 @@ export default function AdminDashboard() {
                         <button
                           className="auth-submit-btn"
                           disabled={busy}
-                          onClick={() => {
-                            const payload = floorEditMap[id] || {};
-                            const body = {};
-                            if (payload.name != null) body.name = payload.name;
-                            if (payload.svgMap != null) body.svgMap = payload.svgMap;
-                            setBusy(true);
-                            api(`/api/admin/floors/${id}`, { method: 'PUT', body: JSON.stringify(body) })
-                              .then(() => {
-                                setFloorEditMap(prev => { const p = { ...prev }; delete p[id]; return p; });
-                                return reload();
-                              })
-                              .catch(e => setError(e.message))
-                              .finally(() => setBusy(false));
-                          }}
+                          onClick={() => saveFloor(id)}
                         >
                           Save
                         </button>
@@ -736,10 +753,9 @@ export default function AdminDashboard() {
                         className="auth-input ft-textarea"
                         value={editing.svgMap ?? ''}
                         onChange={e => {
-                          // keep immediate UI responsive while we debounce DB-bound state
                           const val = e.target.value;
-                          setFloorEditField(id, { svgMap: val });        // update immediate view
-                          debouncedSetFloorSvg(id, val);                 // debounce persistence state
+                          setFloorEditField(id, { svgMap: val });
+                          debouncedSetFloorSvg(id, val);
                         }}
                         placeholder="<svg ...>...</svg>"
                       />
@@ -776,7 +792,7 @@ export default function AdminDashboard() {
                     </div>
                     <div className="ft-actions">
                       <button className="auth-submit-btn" disabled={busy} onClick={() => beginEditFloor(f)}>Edit</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('floors', id)}>Delete</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => requestDelete('floors', id)}>Delete</button>
                     </div>
                   </div>
                 )}
@@ -842,7 +858,7 @@ export default function AdminDashboard() {
                     <div>{a.name} — Floor #{a.floorId} (#{a.id})</div>
                     <div className="ft-actions">
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditAP(prev => ({ ...prev, [a.id]: { name: a.name, cx: a.cx, cy: a.cy } }))}>Edit</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('aps', a.id)}>Delete</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => requestDelete('aps', a.id)}>Delete</button>
                     </div>
                   </>
                 )}
@@ -906,7 +922,7 @@ export default function AdminDashboard() {
                     <div>{d.mac} — AP #{d.apId} (#{d.id})</div>
                     <div className="ft-actions">
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditDevice(prev => ({ ...prev, [d.id]: { mac: d.mac, apId: d.apId } }))}>Edit</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('devices', d.id)}>Delete</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => requestDelete('devices', d.id)}>Delete</button>
                     </div>
                   </>
                 )}
@@ -915,6 +931,21 @@ export default function AdminDashboard() {
           })}
         </div>
       )}
+
+      {/* Themed confirm modal */}
+      <ConfirmModal
+        open={!!confirmState}
+        title="Please confirm"
+        body={
+          confirmState
+            ? `Are you sure you want to delete this ${confirmState.kind.slice(0, -1)}?`
+            : ''
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={performDelete}
+        onCancel={() => setConfirmState(null)}
+      />
     </div>
   );
 }
