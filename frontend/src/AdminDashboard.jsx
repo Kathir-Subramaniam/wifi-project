@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import './FloorDashboard.css'; // reuse styling
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import './FloorDashboard.css';
 import logo from './assets/logo.png';
+
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
 
 async function api(path, opts = {}) {
@@ -15,7 +16,6 @@ async function api(path, opts = {}) {
 }
 
 async function fetchFloorDetail(floorId) {
-  // Returns { id, name, svgMap }
   return api(`/api/floors/${floorId}`);
 }
 
@@ -27,20 +27,18 @@ const readFileAsText = (file) =>
     reader.readAsText(file, 'utf-8');
   });
 
-// Simple debounce hook
-function useDebouncedState(initial, delay = 300) {
-  const [value, setValue] = useState(initial);
-  const [immediate, setImmediate] = useState(initial);
-  useEffect(() => {
-    const t = setTimeout(() => setImmediate(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return [immediate, setValue];
+// debounce helper for text inputs
+function useDebounce(fn, delay = 300) {
+  const timer = useRef(null);
+  return (value) => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => fn(value), delay);
+  };
 }
 
-// A themed file picker that wraps a hidden input
+// Themed file picker
 function FilePicker({ onPick, label = 'Upload SVG', accept = '.svg,image/svg+xml', disabled }) {
-  const inputRef = React.useRef(null);
+  const inputRef = useRef(null);
   return (
     <div className="ft-filepicker">
       <button
@@ -62,7 +60,7 @@ function FilePicker({ onPick, label = 'Upload SVG', accept = '.svg,image/svg+xml
   );
 }
 
-// Generic comparator builder
+// Sorting utils
 function by(getter, dir = 'asc') {
   return (a, b) => {
     const av = getter(a);
@@ -80,8 +78,6 @@ function by(getter, dir = 'asc') {
     return 0;
   };
 }
-
-// Stable multi-sort
 function sortWith(list, ...comparators) {
   if (!Array.isArray(list)) return [];
   const cmp = (a, b) => {
@@ -94,13 +90,13 @@ function sortWith(list, ...comparators) {
   return [...list].sort(cmp);
 }
 
+// Unified Sort dropdown
 function SortDropdown({ fields, value, order, onChange }) {
-  // value: current field, order: 'asc'|'desc'
-  const [open, setOpen] = React.useState(false);
-  const btnRef = React.useRef(null);
-  const menuRef = React.useRef(null);
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const onDocClick = (e) => {
       if (!open) return;
       if (
@@ -148,7 +144,7 @@ function SortDropdown({ fields, value, order, onChange }) {
                   role="menuitemradio"
                   aria-checked={selected}
                   className={`ft-sort-item ${selected ? 'selected' : ''}`}
-                  onClick={() => onChange({ field: f.value, order })}
+                  onClick={() => { onChange({ field: f.value, order }); setOpen(false); }}
                 >
                   <span className="ft-sort-check">{selected ? '✓' : ''}</span>
                   <span>{f.label}</span>
@@ -172,7 +168,7 @@ function SortDropdown({ fields, value, order, onChange }) {
                   role="menuitemradio"
                   aria-checked={selected}
                   className={`ft-sort-item ${selected ? 'selected' : ''}`}
-                  onClick={() => onChange({ field: value, order: o.v })}
+                  onClick={() => { onChange({ field: value, order: o.v }); setOpen(false); }}
                 >
                   <span className="ft-sort-check">{selected ? '✓' : ''}</span>
                   <span>{o.label}</span>
@@ -187,12 +183,10 @@ function SortDropdown({ fields, value, order, onChange }) {
 }
 
 function SortBar({ fields, value, order, onField, onOrder }) {
-  // Wrap unified onChange to update both parts
   const handleChange = ({ field, order }) => {
     onField(field);
     onOrder(order);
   };
-
   return (
     <div className="ft-sortbar">
       <div className="ft-legend-sub">Sort</div>
@@ -206,6 +200,78 @@ function SortBar({ fields, value, order, onField, onOrder }) {
   );
 }
 
+// Minimal User Menu (Profile, Floor Dashboard, Logout)
+function UserMenu({ email, name, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!open) return;
+      if (
+        menuRef.current && !menuRef.current.contains(e.target) &&
+        btnRef.current && !btnRef.current.contains(e.target)
+      ) setOpen(false);
+    };
+    const onEsc = (e) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+
+  const displayName = (name && name.trim()) || (email ? email.split('@')[0] : 'User');
+  const initials = displayName.slice(0, 2).toUpperCase();
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        ref={btnRef}
+        className="ft-live-btn"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+      >
+        <span className="ft-avatar">{initials}</span>
+        <span className="ft-user-label" style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {displayName}
+        </span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.8 }}>
+          <path d="M7 10l5 5 5-5" stroke="#CDE8FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          className="ft-user-menu"
+          style={{
+            position: 'absolute',
+            right: 0,
+            marginTop: 8,
+            width: 220,
+            background: '#0F141C',
+            border: '1px solid #1F2937',
+            borderRadius: 10,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.35)',
+            padding: 8,
+            zIndex: 9999,
+          }}
+        >
+          <a href="/profile" role="menuitem" className="ft-user-menu-item">Profile</a>
+          <a href="/home" role="menuitem" className="ft-user-menu-item">Floor Dashboard</a>
+          <button role="menuitem" className="ft-user-menu-item danger" onClick={onLogout}>Log out</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const [tab, setTab] = useState('buildings');
   const [buildings, setBuildings] = useState([]);
@@ -214,70 +280,128 @@ export default function AdminDashboard() {
   const [devices, setDevices] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  // Sort state per tab
+  const [message, setMessage] = useState(null);
+
+  const confirmAction = async (promptText) => {
+    // You can swap this with a custom modal later
+    return window.confirm(promptText);
+  };
+
+  // auto-clear success messages after a short time
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => setMessage(null), 2500);
+    return () => clearTimeout(t);
+  }, [message]);
+
+
+  // Floors: editor state kept in a separate map to avoid hooks-in-loop
+  const [floorEditMap, setFloorEditMap] = useState({}); // { [id]: { name, svgMap, __fileName, __error } }
+
+  // Debounce store: per-floor timers to debounce svgMap updates
+  const floorDebounceTimers = useRef({}); // { [id]: number }
+
+  // Helper to set floor editor fields safely
+  const setFloorEditField = (id, patch) => {
+    setFloorEditMap(prev => {
+      const cur = prev[id] || {};
+      return { ...prev, [id]: { ...cur, ...patch } };
+    });
+  };
+
+  // Start editing a floor: fetch detail once, then populate editor map
+  const beginEditFloor = async (f) => {
+    const id = f?.id;
+    if (!id) return;
+    // Optimistically put name and empty svgMap while we load
+    setFloorEditMap(prev => ({
+      ...prev,
+      [id]: { name: f.name || '', svgMap: prev[id]?.svgMap ?? '', __fileName: null, __error: null }
+    }));
+    try {
+      const detail = await fetchFloorDetail(id);
+      const svgMap = (detail && typeof detail.svgMap === 'string') ? detail.svgMap : '';
+      setFloorEditField(id, { svgMap, __error: null });
+    } catch (err) {
+      setFloorEditField(id, { __error: 'Failed to load floor details', svgMap: '' });
+    }
+  };
+
+  // Debounced svgMap update for floor id
+  const debouncedSetFloorSvg = (id, value) => {
+    // clear previous timer
+    if (floorDebounceTimers.current[id]) {
+      clearTimeout(floorDebounceTimers.current[id]);
+    }
+    // set new timer
+    floorDebounceTimers.current[id] = setTimeout(() => {
+      setFloorEditField(id, { svgMap: value });
+      delete floorDebounceTimers.current[id];
+    }, 300);
+  };
+
+
   const [sortBuildings, setSortBuildings] = useState({ field: 'name', order: 'asc' });
   const [sortFloors, setSortFloors] = useState({ field: 'buildingName', order: 'asc' });
   const [sortAPs, setSortAPs] = useState({ field: 'buildingId', order: 'asc' });
   const [sortDevices, setSortDevices] = useState({ field: 'apId', order: 'asc' });
 
-  // Sorted views (computed each render)
-  const buildingsSorted = sortWith(
-    buildings,
-    by(b => (sortBuildings.field === 'name' ? b.name : Number(b.id)), sortBuildings.order),
-    by(b => Number(b.id), 'asc') // tiebreaker
-  );
+  const buildingsSorted = useMemo(() =>
+    sortWith(
+      buildings,
+      by(b => (sortBuildings.field === 'name' ? b.name : Number(b.id)), sortBuildings.order),
+      by(b => Number(b.id), 'asc')
+    ), [buildings, sortBuildings]);
 
-  const floorsSorted = sortWith(
-    floors,
-    // primary by selected
-    ...(function () {
-      const f = sortFloors.field;
-      const ord = sortFloors.order;
-      if (f === 'name') return [by(x => x.name, ord)];
-      if (f === 'id') return [by(x => Number(x.id), ord)];
-      if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
-      // default: buildingName (fallback to buildingId if missing)
-      return [by(x => x.buildingName || '', ord), by(x => Number(x.buildingId), ord)];
-    })(),
-    // secondary sorts for determinism
-    by(x => x.name, 'asc'),
-    by(x => Number(x.id), 'asc')
-  );
+  const floorsSorted = useMemo(() =>
+    sortWith(
+      floors,
+      ...(function () {
+        const f = sortFloors.field;
+        const ord = sortFloors.order;
+        if (f === 'name') return [by(x => x.name, ord)];
+        if (f === 'id') return [by(x => Number(x.id), ord)];
+        if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
+        return [by(x => x.buildingName || '', ord), by(x => Number(x.buildingId), ord)];
+      })(),
+      by(x => x.name, 'asc'),
+      by(x => Number(x.id), 'asc')
+    ), [floors, sortFloors]);
 
-  const apsSorted = sortWith(
-    aps,
-    ...(function () {
-      const f = sortAPs.field;
-      const ord = sortAPs.order;
-      if (f === 'name') return [by(x => x.name, ord)];
-      if (f === 'id') return [by(x => Number(x.id), ord)];
-      if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
-      if (f === 'cx') return [by(x => Number(x.cx), ord)];
-      if (f === 'cy') return [by(x => Number(x.cy), ord)];
-      // default buildingId
-      return [by(x => Number(x.buildingId), ord)];
-    })(),
-    by(x => Number(x.floorId), 'asc'),
-    by(x => x.name, 'asc'),
-    by(x => Number(x.id), 'asc')
-  );
+  const apsSorted = useMemo(() =>
+    sortWith(
+      aps,
+      ...(function () {
+        const f = sortAPs.field;
+        const ord = sortAPs.order;
+        if (f === 'name') return [by(x => x.name, ord)];
+        if (f === 'id') return [by(x => Number(x.id), ord)];
+        if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
+        if (f === 'cx') return [by(x => Number(x.cx), ord)];
+        if (f === 'cy') return [by(x => Number(x.cy), ord)];
+        return [by(x => Number(x.buildingId), ord)];
+      })(),
+      by(x => Number(x.floorId), 'asc'),
+      by(x => x.name, 'asc'),
+      by(x => Number(x.id), 'asc')
+    ), [aps, sortAPs]);
 
-  const devicesSorted = sortWith(
-    devices,
-    ...(function () {
-      const f = sortDevices.field;
-      const ord = sortDevices.order;
-      if (f === 'id') return [by(x => Number(x.id), ord)];
-      if (f === 'mac') return [by(x => x.mac, ord)];
-      if (f === 'apId') return [by(x => Number(x.apId), ord)];
-      if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
-      if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
-      return [by(x => Number(x.apId), ord)];
-    })(),
-    by(x => x.mac, 'asc'),
-    by(x => Number(x.id), 'asc')
-  );
-
+  const devicesSorted = useMemo(() =>
+    sortWith(
+      devices,
+      ...(function () {
+        const f = sortDevices.field;
+        const ord = sortDevices.order;
+        if (f === 'id') return [by(x => Number(x.id), ord)];
+        if (f === 'mac') return [by(x => x.mac, ord)];
+        if (f === 'apId') return [by(x => Number(x.apId), ord)];
+        if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
+        if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
+        return [by(x => Number(x.apId), ord)];
+      })(),
+      by(x => x.mac, 'asc'),
+      by(x => Number(x.id), 'asc')
+    ), [devices, sortDevices]);
 
   const reload = async () => {
     setError(null);
@@ -338,11 +462,11 @@ export default function AdminDashboard() {
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
-  // Edit state maps
-  const [editBuilding, setEditBuilding] = useState({}); // {id: { name }}
-  const [editFloor, setEditFloor] = useState({});       // {id: { name, svgMap }}
-  const [editAP, setEditAP] = useState({});             // {id: { name, cx, cy }}
-  const [editDevice, setEditDevice] = useState({});     // {id: { mac, apId }}
+  // Edit state
+  const [editBuilding, setEditBuilding] = useState({});
+  const [editFloor, setEditFloor] = useState({});
+  const [editAP, setEditAP] = useState({});
+  const [editDevice, setEditDevice] = useState({});
 
   // Save edits
   const saveBuilding = async (id) => {
@@ -360,7 +484,6 @@ export default function AdminDashboard() {
     if (!payload) return;
     setBusy(true); setError(null);
     try {
-      // Both fields optional; send whichever changed
       const body = {};
       if (payload.name != null) body.name = payload.name;
       if (payload.svgMap != null) body.svgMap = payload.svgMap;
@@ -388,10 +511,6 @@ export default function AdminDashboard() {
     if (!payload) return;
     setBusy(true); setError(null);
     try {
-      // You need a PUT endpoint for devices to support mac/apId changes.
-      // If implemented as /api/admin/devices/:id with { mac, apId }, uncomment:
-      // await api(`/api/admin/devices/${id}`, { method: 'PUT', body: JSON.stringify({ mac: payload.mac, apId: payload.apId }) });
-      // For now, we’ll show an error if endpoint not available:
       throw new Error('Device edit is not enabled yet. Please implement PUT /api/admin/devices/:id');
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -408,6 +527,25 @@ export default function AdminDashboard() {
   const [devMac, setDevMac] = useState('');
   const [devApId, setDevApId] = useState('');
 
+  // User menu data (optional, simple)
+  const [profile, setProfile] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const p = await api('/api/profile');
+        setProfile(p);
+      } catch { }
+    })();
+  }, []);
+  const onLogout = async () => {
+    try {
+      await api('/api/logout', { method: 'POST' });
+      window.location.href = '/auth';
+    } catch { }
+  };
+  const displayName = `${profile?.user?.firstName || ''} ${profile?.user?.lastName || ''}`.trim();
+  const email = profile?.user?.email;
+
   const TabButton = ({ id, label }) => (
     <button className={`auth-tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>{label}</button>
   );
@@ -421,7 +559,7 @@ export default function AdminDashboard() {
           </a>
           <div className="ft-brand-text">Admin</div>
         </div>
-        <a href="/home" className="ft-live-btn">Dashboard</a>
+        <UserMenu email={email} name={displayName} onLogout={onLogout} />
       </div>
 
       <div className="auth-tabs" style={{ marginBottom: 16 }}>
@@ -451,10 +589,8 @@ export default function AdminDashboard() {
               onField={v => setSortBuildings(s => ({ ...s, field: v }))}
               onOrder={v => setSortBuildings(s => ({ ...s, order: v }))}
             />
+          </div>
 
-          </div>
-          <div>
-          </div>
           {/* Create */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <input className="auth-input" placeholder="Building name" value={bName} onChange={e => setBName(e.target.value)} />
@@ -509,7 +645,6 @@ export default function AdminDashboard() {
               onField={v => setSortFloors(s => ({ ...s, field: v }))}
               onOrder={v => setSortFloors(s => ({ ...s, order: v }))}
             />
-
           </div>
 
           {/* Create */}
@@ -531,7 +666,7 @@ export default function AdminDashboard() {
                   const text = (await readFileAsText(file)).trim();
                   if (!/^<\s*svg[\s>]/i.test(text)) throw new Error('Selected file is not an SVG');
                   setFSvg(text);
-                  // Show filename badge
+                  // show badge
                   setEditFloor(prev => ({ ...prev, __createFile__: { name: file.name } }));
                 } catch (err) {
                   setError(err.message);
@@ -547,106 +682,103 @@ export default function AdminDashboard() {
             <div className="ft-badge">Loaded: {editFloor.__createFile__.name}</div>
           )}
 
-
           {/* List + edit */}
           {floorsSorted.map(f => {
-            const editing = editFloor[f.id] || null;
-
-            const startEdit = async () => {
-              try {
-                setBusy(true);
-                // Load full svgMap from detail endpoint
-                const detail = await fetchFloorDetail(f.id);
-                // detail.svgMap might be URL or raw SVG text; we display the raw text or URL string
-                setEditFloor(prev => ({
-                  ...prev,
-                  [f.id]: { name: f.name, svgMap: detail?.svgMap ?? '' }
-                }));
-              } catch (e) {
-                setError(e.message);
-              } finally {
-                setBusy(false);
-              }
-            };
+            const id = f?.id;
+            const editing = id && floorEditMap[id];
 
             return (
-              <div key={f.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div key={id} className="ft-stat-card ft-card-spaced" style={{ alignItems: 'flex-start' }}>
                 {editing ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, width: '100%' }}>
-                    {/* Name edit */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
+                  <div className="ft-edit-grid" style={{ width: '100%' }}>
+                    <div className="ft-edit-row">
                       <input
                         className="auth-input"
-                        value={editing.name ?? f.name}
-                        onChange={e => setEditFloor(prev => ({ ...prev, [f.id]: { ...editing, name: e.target.value } }))}
+                        value={editing.name ?? f.name ?? ''}
+                        onChange={e => setFloorEditField(id, { name: e.target.value })}
                         placeholder="Floor name"
                       />
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="auth-submit-btn" disabled={busy} onClick={() => saveFloor(f.id)}>Save</button>
-                        <button className="auth-submit-btn" disabled={busy} onClick={() => setEditFloor(prev => { const p = { ...prev }; delete p[f.id]; return p; })}>Cancel</button>
+                      <div className="ft-actions">
+                        <button
+                          className="auth-submit-btn"
+                          disabled={busy}
+                          onClick={() => {
+                            const payload = floorEditMap[id] || {};
+                            const body = {};
+                            if (payload.name != null) body.name = payload.name;
+                            if (payload.svgMap != null) body.svgMap = payload.svgMap;
+                            setBusy(true);
+                            api(`/api/admin/floors/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+                              .then(() => {
+                                setFloorEditMap(prev => { const p = { ...prev }; delete p[id]; return p; });
+                                return reload();
+                              })
+                              .catch(e => setError(e.message))
+                              .finally(() => setBusy(false));
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          className="auth-submit-btn"
+                          disabled={busy}
+                          onClick={() => setFloorEditMap(prev => { const p = { ...prev }; delete p[id]; return p; })}
+                        >
+                          Cancel
+                        </button>
                       </div>
                     </div>
 
-                    {/* SVG edit */}
-                    <div>
-                      <div className="ft-legend-sub" style={{ marginBottom: 6 }}>SVG map (Raw SVG)</div>
+                    <div className="ft-svg-block">
+                      <div className="ft-legend-sub">SVG map (Raw SVG)</div>
+
                       <textarea
-                        className="auth-input"
-                        style={{
-                          minHeight: 180,
-                          resize: 'vertical',
-                          background: '#0A1620',
-                          border: '1px solid #223042',
-                          borderRadius: 10,
-                          color: '#E6EDF3',
-                          padding: 12
-                        }}
+                        className="auth-input ft-textarea"
                         value={editing.svgMap ?? ''}
-                        onChange={e => setEditFloor(prev => ({ ...prev, [f.id]: { ...editing, svgMap: e.target.value } }))}
-                        placeholder="<svg ...>...</svg> or https://example.com/map.svg"
-                      />
-                      <input
-                        type="file"
-                        accept=".svg,image/svg+xml"
-                        className="auth-input"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          try {
-                            setBusy(true);
-                            const text = (await readFileAsText(file)).trim();
-
-                            if (!/^<\s*svg[\s>]/i.test(text)) {
-                              throw new Error('Selected file is not an SVG');
-                            }
-
-                            setEditFloor(prev => ({
-                              ...prev,
-                              [f.id]: { ...editing, svgMap: text }
-                            }));
-                          } catch (err) {
-                            setError(err.message);
-                          } finally {
-                            setBusy(false);
-                          }
+                        onChange={e => {
+                          // keep immediate UI responsive while we debounce DB-bound state
+                          const val = e.target.value;
+                          setFloorEditField(id, { svgMap: val });        // update immediate view
+                          debouncedSetFloorSvg(id, val);                 // debounce persistence state
                         }}
+                        placeholder="<svg ...>...</svg>"
                       />
+
+                      <div className="ft-row gap" style={{ marginTop: 8 }}>
+                        <FilePicker
+                          disabled={busy}
+                          label="Replace with file"
+                          onPick={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              setBusy(true);
+                              const text = (await readFileAsText(file)).trim();
+                              if (!/^<\s*svg[\s>]/i.test(text)) throw new Error('Selected file is not an SVG');
+                              setFloorEditField(id, { svgMap: text, __fileName: file.name, __error: null });
+                            } catch (err) {
+                              setFloorEditField(id, { __error: err.message });
+                            } finally {
+                              setBusy(false);
+                            }
+                          }}
+                        />
+                        {editing.__fileName && <div className="ft-badge">Loaded: {editing.__fileName}</div>}
+                        {editing.__error && <div className="ft-badge" style={{ color: '#FCA5A5', borderColor: '#512; background:#200' }}>{editing.__error}</div>}
+                      </div>
                     </div>
                   </div>
                 ) : (
-                  <>
+                  <div className="ft-row between" style={{ width: '100%' }}>
                     <div>
-                      <div style={{ fontWeight: 700 }}>{f.name} — {f.buildingName || `B#${f.buildingId}`} (#{f.id})</div>
-                      <div className="ft-legend-sub" style={{ marginTop: 6 }}>
-                        SVG: { /* show a compact hint of svgMap availability; fetch on edit for full content */}
-                        <span style={{ opacity: 0.8 }}>Click Edit to view and modify the SVG map</span>
-                      </div>
+                      <div className="ft-title-line">{f?.name || '(unnamed)'} — {f?.buildingName || `B#${f?.buildingId}`} (#{id})</div>
+                      <div className="ft-legend-sub">Click Edit to view and modify the SVG map</div>
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="auth-submit-btn" disabled={busy} onClick={startEdit}>Edit</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('floors', f.id)}>Delete</button>
+                    <div className="ft-actions">
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => beginEditFloor(f)}>Edit</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('floors', id)}>Delete</button>
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
             );
@@ -676,7 +808,6 @@ export default function AdminDashboard() {
               onField={v => setSortAPs(s => ({ ...s, field: v }))}
               onOrder={v => setSortAPs(s => ({ ...s, order: v }))}
             />
-
           </div>
 
           {/* Create */}
@@ -701,7 +832,7 @@ export default function AdminDashboard() {
                     <input className="auth-input" value={editing.name ?? a.name} onChange={e => setEditAP(prev => ({ ...prev, [a.id]: { ...editing, name: e.target.value } }))} />
                     <input className="auth-input" placeholder="cx" value={editing.cx ?? a.cx} onChange={e => setEditAP(prev => ({ ...prev, [a.id]: { ...editing, cx: e.target.value } }))} />
                     <input className="auth-input" placeholder="cy" value={editing.cy ?? a.cy} onChange={e => setEditAP(prev => ({ ...prev, [a.id]: { ...editing, cy: e.target.value } }))} />
-                    <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                    <div className="ft-actions" style={{ marginLeft: 'auto' }}>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => saveAP(a.id)}>Save</button>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditAP(prev => { const p = { ...prev }; delete p[a.id]; return p; })}>Cancel</button>
                     </div>
@@ -709,7 +840,7 @@ export default function AdminDashboard() {
                 ) : (
                   <>
                     <div>{a.name} — Floor #{a.floorId} (#{a.id})</div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div className="ft-actions">
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditAP(prev => ({ ...prev, [a.id]: { name: a.name, cx: a.cx, cy: a.cy } }))}>Edit</button>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('aps', a.id)}>Delete</button>
                     </div>
@@ -733,7 +864,6 @@ export default function AdminDashboard() {
               fields={[
                 { value: 'apId', label: 'AP ID' },
                 { value: 'floorId', label: 'Floor ID' },
-                // { value: 'buildingId', label: 'Building ID' }, // enable once API includes buildingId
                 { value: 'mac', label: 'MAC' },
                 { value: 'id', label: 'Device ID' },
               ]}
@@ -742,7 +872,6 @@ export default function AdminDashboard() {
               onField={v => setSortDevices(s => ({ ...s, field: v }))}
               onOrder={v => setSortDevices(s => ({ ...s, order: v }))}
             />
-
           </div>
 
           {/* Create */}
@@ -767,7 +896,7 @@ export default function AdminDashboard() {
                       <option value="">Select AP</option>
                       {aps.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                     </select>
-                    <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                    <div className="ft-actions" style={{ marginLeft: 'auto' }}>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => saveDevice(d.id)}>Save</button>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditDevice(prev => { const p = { ...prev }; delete p[d.id]; return p; })}>Cancel</button>
                     </div>
@@ -775,7 +904,7 @@ export default function AdminDashboard() {
                 ) : (
                   <>
                     <div>{d.mac} — AP #{d.apId} (#{d.id})</div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div className="ft-actions">
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditDevice(prev => ({ ...prev, [d.id]: { mac: d.mac, apId: d.apId } }))}>Edit</button>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('devices', d.id)}>Delete</button>
                     </div>
