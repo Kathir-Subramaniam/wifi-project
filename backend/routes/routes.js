@@ -517,4 +517,6 @@ router.delete('/api/profile/devices/:id', verifyToken, async (req, res) => {
   }
 });
 
+
+
 module.exports = router;

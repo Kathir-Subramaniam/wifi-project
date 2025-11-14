@@ -469,6 +469,61 @@ app.post('/api/clients', verifyToken, async (req, res) => {
   }
 });
 
+app.get('/api/users/:userId/ap-connection', verifyToken, async (req, res) => {
+  try {
+    const userId = toBi(req.params.userId);
+
+    // check ownership/permission
+    const userRow = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { firebaseUid: true },
+    });
+
+    // Gets user's registered devices
+    const devices = await prisma.userDevices.findMany({
+      where: { userId },
+      select: { mac: true },
+    });
+    if (!devices.length) {
+      return res.status(404).json({ error: 'User has no registered device MAC' });
+    }
+
+    const normalizedMac = devices[0].mac.trim().toLowerCase();
+
+    const client = await prisma.clients.findFirst({
+      where: {
+        mac: { equals: normalizedMac, mode: 'insensitive' },
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        apId: true,
+        updatedAt: true,
+        ap: {
+          select: { id: true, name: true, floorId: true },
+        },
+      },
+    });
+
+    if (!client || !client.ap) {
+      return res.json({ mac: normalizedMac, ap: null });
+    }
+
+    return res.json({
+      mac: normalizedMac,
+      ap: {
+        id: client.ap.id.toString(),
+        name: client.ap.name,
+        floorId: client.ap.floorId?.toString(),
+      },
+      updatedAt: client.updatedAt, // place it here if you prefer
+    });
+  } catch (error) {
+    console.error('ap-connection lookup failed', error);
+    return res.status(500).json({ error: 'Failed to resolve AP connection' });
+  }
+});
+
+
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
 });
