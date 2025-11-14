@@ -33,6 +33,9 @@ export default function FloorDashboard() {
   const [floorName, setFloorName] = useState('Floor 1');
   const [buildingName, setBuildingName] = useState('');
   const [profile, setProfile] = useState(null);
+  const [myConnections, setMyConnections] = useState([]);
+  const [connError, setConnError] = useState(null);
+  const [connLoading, setConnLoading] = useState(false);
 
   const [stats, setStats] = useState({
     totalDevices: 0,
@@ -74,7 +77,7 @@ export default function FloorDashboard() {
   useEffect(() => {
     async function fetchFloors() {
       try {
-        const res = await fetch(`${API_BASE}/api/floors`, {credentials: 'include', headers: { 'Content-Type': 'application/json' }});
+        const res = await fetch(`${API_BASE}/api/floors`, { credentials: 'include', headers: { 'Content-Type': 'application/json' } });
         const data = await res.json();
         if (Array.isArray(data)) {
           setFloors(data);
@@ -110,11 +113,11 @@ export default function FloorDashboard() {
 
         const creds = { credentials: 'include', headers: { 'Content-Type': 'application/json' } };
         const [devicesRes, apsRes, apsCountRes, floorRes, buildingRes] = await Promise.all([
-          fetch(`${ API_BASE }/api/stats/total-devices`, creds),
-          fetch(`${ API_BASE }/api/stats/total-aps`, creds),
-          fetch(`${ API_BASE }/api/stats/devices-by-ap?floorId=${ floorId }`, creds),
-          fetch(`${ API_BASE }/api/floors/${ floorId }`, creds),
-          fetch(`${ API_BASE }/api/floors/${ floorId }/building`, creds),
+          fetch(`${API_BASE}/api/stats/total-devices`, creds),
+          fetch(`${API_BASE}/api/stats/total-aps`, creds),
+          fetch(`${API_BASE}/api/stats/devices-by-ap?floorId=${floorId}`, creds),
+          fetch(`${API_BASE}/api/floors/${floorId}`, creds),
+          fetch(`${API_BASE}/api/floors/${floorId}/building`, creds),
         ]);
 
         const devicesData = await devicesRes.json();
@@ -158,6 +161,29 @@ export default function FloorDashboard() {
       if (revokeUrl) URL.revokeObjectURL(revokeUrl);
     };
   }, [floorId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!profile?.user?.id) return; // wait for profile to load
+        setConnLoading(true);
+        setConnError(null);
+
+        const res = await fetch(`${API_BASE}/api/users/${profile.user.id}/ap-connection`, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to load connections');
+
+        setMyConnections(Array.isArray(data.connections) ? data.connections : []);
+      } catch (e) {
+        setConnError(e.message);
+      } finally {
+        setConnLoading(false);
+      }
+    })();
+  }, [profile?.user?.id]);
 
   const statCards = useMemo(() => [
     { label: 'Total Devices', value: stats.totalDevices, icon: devicesImg },
@@ -284,6 +310,44 @@ export default function FloorDashboard() {
               </div>
             </div>
           </div>
+        </div>
+        {/* My Device Connections */}
+        <div className="ft-panel" style={{ marginTop: 16 }}>
+          <div className="ft-panel-header">
+            <div className="ft-panel-title">My Device Connections</div>
+            <div className="ft-panel-sub">Latest AP per registered device</div>
+          </div>
+
+          {connLoading && <div className="ft-legend-sub">Loading…</div>}
+          {connError && <div className="auth-alert auth-alert-error" style={{ marginBottom: 8 }}>{String(connError)}</div>}
+
+          {!connLoading && !connError && (
+            <>
+              {myConnections.length === 0 && (
+                <div className="ft-legend-sub">No registered devices found.</div>
+              )}
+
+              {myConnections.map((c, i) => (
+                <div key={i} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <div style={{ fontWeight: 700 }}>
+                      {c.mac?.toUpperCase?.() || '(unknown MAC)'}
+                    </div>
+                    {c.ap ? (
+                      <div className="ft-legend-sub">
+                        Connected to {c.ap.name} {c.ap.floorId ? `(Floor #${c.ap.floorId})` : ''}
+                      </div>
+                    ) : (
+                      <div className="ft-legend-sub">Not currently connected</div>
+                    )}
+                  </div>
+                  <div className="ft-legend-sub" title={c.updatedAt || ''}>
+                    {c.updatedAt ? new Date(c.updatedAt).toLocaleString() : ''}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
     </div>
