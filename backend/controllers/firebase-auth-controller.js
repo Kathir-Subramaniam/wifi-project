@@ -29,7 +29,7 @@ class FirebaseAuthController {
 
     try {
       await prisma.users.create({
-        data: { firstName, lastName, email, firebaseUid, roleId: BigInt(1) }, // BigInt per schema
+        data: { firstName, lastName, email, firebaseUid, roleId: BigInt(5) }, // BigInt per schema
       });
     } catch (dbError) {
       console.error('DB error:', dbError);

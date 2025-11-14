@@ -299,6 +299,32 @@ export default function AdminDashboard() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
 
+  // New tabs
+  const [groups, setGroups] = useState([]);
+  const [globalPerms, setGlobalPerms] = useState([]);
+
+  // Create fields (new)
+  const [grpName, setGrpName] = useState('');
+
+  // GlobalPermissions create fields
+  const [gpGroupId, setGpGroupId] = useState('');
+  const [gpBuildingId, setGpBuildingId] = useState('');
+  const [gpFloorId, setGpFloorId] = useState('');
+
+  // Edit state
+  const [editGroup, setEditGroup] = useState({});
+
+  // Pending Users data
+  const [pendingUsers, setPendingUsers] = useState([]);
+
+  // Form state for assigning role + group per pending user
+  // { [userId]: { roleId: string, groupId: string } }
+  const [assignPending, setAssignPending] = useState({});
+
+  // For dropdowns (reuse existing roles list if you have one; if not, fetch)
+  const [roles, setRoles] = useState([]); // [{id, name}] — must include "Owner", "Organisation Admin", "Site Admin", "Pending User", etc.
+
+
   // Modal state for deletes
   const [confirmState, setConfirmState] = useState(null);
   // confirmState = { kind: 'buildings'|'floors'|'aps'|'devices', id: string|number }
@@ -351,6 +377,61 @@ export default function AdminDashboard() {
   const [sortFloors, setSortFloors] = useState({ field: 'buildingName', order: 'asc' });
   const [sortAPs, setSortAPs] = useState({ field: 'buildingId', order: 'asc' });
   const [sortDevices, setSortDevices] = useState({ field: 'apId', order: 'asc' });
+  const [sortGroups, setSortGroups] = useState({ field: 'name', order: 'asc' });
+  const [sortGlobalPerms, setSortGlobalPerms] = useState({ field: 'groupName', order: 'asc' });
+  const [sortPending, setSortPending] = useState({ field: 'email', order: 'asc' });
+
+  const pendingSorted = useMemo(() =>
+    sortWith(
+      pendingUsers,
+      ...(function () {
+        const f = sortPending.field;
+        const ord = sortPending.order;
+        if (f === 'email') return [by(x => x.email || '', ord)];
+        if (f === 'id') return [by(x => Number(x.id), ord)];
+        if (f === 'createdAt') return [by(x => new Date(x.createdAt).getTime(), ord)];
+        return [by(x => x.email || '', ord)];
+      })(),
+      by(x => x.email || '', 'asc'),
+      by(x => Number(x.id), 'asc')
+    ), [pendingUsers, sortPending]
+  );
+
+
+  const groupsSorted = useMemo(() =>
+    sortWith(
+      groups,
+      ...(function () {
+        const f = sortGroups.field;
+        const ord = sortGroups.order;
+        if (f === 'name') return [by(x => x.name, ord)];
+        return [by(x => Number(x.id), ord)];
+      })(),
+      by(x => x.name, 'asc'),
+      by(x => Number(x.id), 'asc')
+    ), [groups, sortGroups]
+  );
+
+  const globalPermsSorted = useMemo(() =>
+    sortWith(
+      globalPerms,
+      ...(function () {
+        const f = sortGlobalPerms.field;
+        const ord = sortGlobalPerms.order;
+        if (f === 'groupName') return [by(x => x.groupName || '', ord)];
+        if (f === 'buildingName') return [by(x => x.buildingName || '', ord)];
+        if (f === 'floorName') return [by(x => x.floorName || '', ord)];
+        if (f === 'groupId') return [by(x => Number(x.groupId), ord)];
+        if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
+        if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
+        return [by(x => Number(x.id), ord)];
+      })(),
+      by(x => x.groupName || '', 'asc'),
+      by(x => x.buildingName || '', 'asc'),
+      by(x => x.floorName || '', 'asc'),
+      by(x => Number(x.id), 'asc')
+    ), [globalPerms, sortGlobalPerms]
+  );
 
   const buildingsSorted = useMemo(() =>
     sortWith(
@@ -412,22 +493,113 @@ export default function AdminDashboard() {
   const reload = async () => {
     setError(null);
     try {
-      const [b, f, a, d] = await Promise.allSettled([
+      const [b, f, a, d, g, gp, pu, rl] = await Promise.allSettled([
         api('/api/admin/buildings'),
         api('/api/admin/floors'),
         api('/api/admin/aps'),
         api('/api/admin/devices'),
+        api('/api/admin/groups'),
+        api('/api/admin/global-permissions'),
+        api('/api/admin/pending-users'), // NEW
+        api('/api/admin/roles'),         // NEW (to populate role dropdown)
       ]);
+
       if (b.status === 'fulfilled') setBuildings(b.value);
       if (f.status === 'fulfilled') setFloors(f.value);
       if (a.status === 'fulfilled') setAps(a.value);
       if (d.status === 'fulfilled') setDevices(d.value);
+      if (g.status === 'fulfilled') setGroups(g.value);
+      if (gp.status === 'fulfilled') setGlobalPerms(gp.value);
+      if (pu.status === 'fulfilled') setPendingUsers(pu.value);
+      if (rl.status === 'fulfilled') setRoles(rl.value);
     } catch (e) {
       setError(e.message);
     }
   };
 
+
+
   useEffect(() => { reload(); }, []);
+
+  const assignUserRoleAndGroup = async (userId) => {
+    const payload = assignPending[userId];
+    if (!payload || !payload.roleId || !payload.groupId) {
+      setError('Please select both role and group');
+      return;
+    }
+    setBusy(true); setError(null);
+    try {
+      await api(`/api/admin/pending-users/${userId}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({
+          roleId: payload.roleId,
+          groupId: payload.groupId,
+        }),
+      });
+      setAssignPending(prev => { const next = { ...prev }; delete next[userId]; return next; });
+      await reload();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+
+  // Groups
+  const onCreateGroup = async (name) => {
+    setBusy(true); setError(null);
+    try {
+      await api('/api/admin/groups', { method: 'POST', body: JSON.stringify({ name }) });
+      setGrpName('');
+      await reload();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const saveGroup = async (id) => {
+    const payload = editGroup[id];
+    if (!payload) return;
+    setBusy(true); setError(null);
+    try {
+      await api(`/api/admin/groups/${id}`, { method: 'PUT', body: JSON.stringify({ name: payload.name }) });
+      setEditGroup(prev => { const p = { ...prev }; delete p[id]; return p; });
+      await reload();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const onDeleteGroup = async (id) => {
+    setBusy(true); setError(null);
+    try {
+      await api(`/api/admin/groups/${id}`, { method: 'DELETE' });
+      await reload();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  // GlobalPermissions
+  const onCreateGlobalPermission = async (groupId, buildingId, floorId) => {
+    setBusy(true); setError(null);
+    try {
+      // Require all three — or allow any combination? Here we require all 3 as per your request.
+      if (!groupId || !buildingId || !floorId) {
+        throw new Error('group, building, and floor are required');
+      }
+      await api('/api/admin/global-permissions', {
+        method: 'POST',
+        body: JSON.stringify({ groupId, buildingId, floorId }),
+      });
+      setGpGroupId(''); setGpBuildingId(''); setGpFloorId('');
+      await reload();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const onDeleteGlobalPermission = async (id) => {
+    setBusy(true); setError(null);
+    try {
+      await api(`/api/admin/global-permissions/${id}`, { method: 'DELETE' });
+      await reload();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
 
   // Create handlers with success messages and clearing inputs
   const onCreateBuilding = async (name) => {
@@ -564,14 +736,14 @@ export default function AdminDashboard() {
       try {
         const p = await api('/api/profile');
         setProfile(p);
-      } catch {}
+      } catch { }
     })();
   }, []);
   const onLogout = async () => {
     try {
       await api('/api/logout', { method: 'POST' });
       window.location.href = '/';
-    } catch {}
+    } catch { }
   };
   const displayName = `${profile?.user?.firstName || ''} ${profile?.user?.lastName || ''}`.trim();
   const email = profile?.user?.email;
@@ -593,14 +765,142 @@ export default function AdminDashboard() {
       </div>
 
       <div className="auth-tabs" style={{ marginBottom: 16 }}>
+        <TabButton id="globalPermissions" label="GlobalPermissions" />
+        <TabButton id="groups" label="Groups" />
         <TabButton id="buildings" label="Buildings" />
         <TabButton id="floors" label="Floors" />
         <TabButton id="aps" label="APs" />
         <TabButton id="devices" label="Devices" />
+        <TabButton id="pendingUsers" label="Pending Users" />
       </div>
 
       {error && <div className="auth-alert auth-alert-error" style={{ marginBottom: 12 }}>{String(error)}</div>}
       {message && <div className="auth-alert auth-alert-success" style={{ marginBottom: 12 }}>{String(message)}</div>}
+
+      {/* GlobalPermissions */}
+      {tab === 'globalPermissions' && (
+        <div className="ft-panel">
+          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div className="ft-panel-title">Global Permissions</div>
+              <div className="ft-panel-sub">Map a Group to Building and Floor</div>
+            </div>
+            <SortBar
+              fields={[
+                { value: 'groupName', label: 'Group name' },
+                { value: 'buildingName', label: 'Building name' },
+                { value: 'floorName', label: 'Floor name' },
+                { value: 'groupId', label: 'Group ID' },
+                { value: 'buildingId', label: 'Building ID' },
+                { value: 'floorId', label: 'Floor ID' },
+                { value: 'id', label: 'Record ID' },
+              ]}
+              value={sortGlobalPerms.field}
+              order={sortGlobalPerms.order}
+              onField={v => setSortGlobalPerms(s => ({ ...s, field: v }))}
+              onOrder={v => setSortGlobalPerms(s => ({ ...s, order: v }))}
+            />
+          </div>
+
+          {/* Create */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 12 }}>
+            <select className="auth-input" value={gpGroupId} onChange={e => setGpGroupId(e.target.value)}>
+              <option value="">Select group</option>
+              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+
+            <select className="auth-input" value={gpBuildingId} onChange={e => setGpBuildingId(e.target.value)}>
+              <option value="">Select building</option>
+              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+
+            <select className="auth-input" value={gpFloorId} onChange={e => setGpFloorId(e.target.value)}>
+              <option value="">Select floor</option>
+              {floors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+
+            <button
+              className="auth-submit-btn"
+              disabled={busy || !gpGroupId || !gpBuildingId || !gpFloorId}
+              onClick={() => onCreateGlobalPermission(gpGroupId, gpBuildingId, gpFloorId)}
+            >
+              Add
+            </button>
+          </div>
+
+          {/* List */}
+          {globalPermsSorted.map(rec => (
+            <div key={rec.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div className="ft-title-line">
+                  Group: {rec.groupName || `G#${rec.groupId}`} • Building: {rec.buildingName || `B#${rec.buildingId}`} • Floor: {rec.floorName || `F#${rec.floorId}`}
+                </div>
+                <div className="ft-legend-sub">Record #{rec.id}</div>
+              </div>
+              <div className="ft-actions">
+                {/* Optional: add Edit in the future */}
+                <button className="auth-submit-btn" disabled={busy} onClick={() => onDeleteGlobalPermission(rec.id)}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+
+      {/* Groups */}
+      {tab === 'groups' && (
+        <div className="ft-panel">
+          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div className="ft-panel-title">Groups</div>
+              <div className="ft-panel-sub">Create, edit, or delete groups</div>
+            </div>
+            <SortBar
+              fields={[
+                { value: 'name', label: 'Name' },
+                { value: 'id', label: 'ID' },
+              ]}
+              value={sortGroups.field}
+              order={sortGroups.order}
+              onField={v => setSortGroups(s => ({ ...s, field: v }))}
+              onOrder={v => setSortGroups(s => ({ ...s, order: v }))}
+            />
+          </div>
+
+          {/* Create */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <input className="auth-input" placeholder="Group name" value={grpName} onChange={e => setGrpName(e.target.value)} />
+            <button className="auth-submit-btn" disabled={busy || !grpName} onClick={() => onCreateGroup(grpName)}>Add</button>
+          </div>
+
+          {/* List + edit */}
+          {groupsSorted.map(g => {
+            const editing = editGroup[g.id] || null;
+            return (
+              <div key={g.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                {editing ? (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
+                    <input className="auth-input" value={editing.name ?? g.name}
+                      onChange={e => setEditGroup(prev => ({ ...prev, [g.id]: { ...editing, name: e.target.value } }))} />
+                    <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => saveGroup(g.id)}>Save</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => setEditGroup(prev => { const p = { ...prev }; delete p[g.id]; return p; })}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>{g.name} (#{g.id})</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => setEditGroup(prev => ({ ...prev, [g.id]: { name: g.name } }))}>Edit</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDeleteGroup(g.id)}>Delete</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Buildings */}
       {tab === 'buildings' && (
@@ -931,6 +1231,84 @@ export default function AdminDashboard() {
           })}
         </div>
       )}
+
+      {/* Pending Users */}
+      {tab === 'pendingUsers' && (
+        <div className="ft-panel">
+          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div className="ft-panel-title">Pending Users</div>
+              <div className="ft-panel-sub">Owners can assign role and group to new users</div>
+            </div>
+            <SortBar
+              fields={[
+                { value: 'email', label: 'Email' },
+                { value: 'id', label: 'User ID' },
+                { value: 'createdAt', label: 'Created At' },
+              ]}
+              value={sortPending.field}
+              order={sortPending.order}
+              onField={v => setSortPending(s => ({ ...s, field: v }))}
+              onOrder={v => setSortPending(s => ({ ...s, order: v }))}
+            />
+          </div>
+
+          {pendingSorted.length === 0 && <div className="ft-legend-sub">No pending users.</div>}
+
+          {pendingSorted.map(u => {
+            const cur = assignPending[u.id] || {};
+            return (
+              <div key={u.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'grid', gap: 4 }}>
+                  <div className="ft-title-line">
+                    {u.email} (#{u.id})
+                  </div>
+                  <div className="ft-legend-sub">
+                    Signed up: {u.createdAt ? new Date(u.createdAt).toLocaleString() : '-'}
+                  </div>
+                </div>
+
+                <div className="ft-actions" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center' }}>
+                  {/* Role dropdown */}
+                  <select
+                    className="auth-input"
+                    value={cur.roleId ?? ''}
+                    onChange={e => setAssignPending(prev => ({ ...prev, [u.id]: { ...cur, roleId: e.target.value } }))}
+                  >
+                    <option value="">Select role</option>
+                    {roles
+                      .filter(r => r.name !== 'Pending User') // prevent re-assigning pending
+                      .map(r => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                  </select>
+
+                  {/* Group dropdown */}
+                  <select
+                    className="auth-input"
+                    value={cur.groupId ?? ''}
+                    onChange={e => setAssignPending(prev => ({ ...prev, [u.id]: { ...cur, groupId: e.target.value } }))}
+                  >
+                    <option value="">Select group</option>
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+
+                  <button
+                    className="auth-submit-btn"
+                    disabled={busy || !cur.roleId || !cur.groupId}
+                    onClick={() => assignUserRoleAndGroup(u.id)}
+                  >
+                    Assign
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
 
       {/* Themed confirm modal */}
       <ConfirmModal
