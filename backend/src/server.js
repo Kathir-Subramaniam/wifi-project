@@ -234,19 +234,18 @@
 //   console.log(`Server listening on port ${port}`);
 // });
 
-
-const express = require('express');
-const cookieParser = require('cookie-parser');
-const cors = require('cors');
-const { PrismaClient } = require('@prisma/client');
+const express = require("express");
+const cookieParser = require("cookie-parser");
+const cors = require("cors");
+const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-const router = require('../routes/routes');
-const verifyToken = require('../middleware');
-const { toJSONSafe } = require('../utils/jsonBigInt');
+const router = require("../routes/routes");
+const verifyToken = require("../middleware");
+const { toJSONSafe } = require("../utils/jsonBigInt");
 
 // Helpers
 const toBi = (v) => {
@@ -256,12 +255,14 @@ const toBi = (v) => {
 };
 
 // Middleware
-app.use(cors({
-  origin: ['http://localhost:5173'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+app.use(
+  cors({
+    origin: ["http://localhost:5173"],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -271,27 +272,30 @@ app.use(cookieParser());
 app.use(router);
 
 // Public minimal endpoints (optional to protect)
-app.get('/', (req, res) => {
-  res.send('Hello World!');
+app.get("/", (req, res) => {
+  res.send("Hello World!");
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({ message: 'Server is running', timestamp: new Date().toISOString() });
+app.get("/api/health", (req, res) => {
+  res.json({
+    message: "Server is running",
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Diagnostics (protected)
-app.get('/api/diag', verifyToken, async (req, res) => {
+app.get("/api/diag", verifyToken, async (req, res) => {
   try {
     const now = await prisma.$queryRaw`SELECT NOW()`;
     res.json(toJSONSafe({ ok: true, uid: req.user?.uid, db: now }));
   } catch (e) {
-    console.error('diag error', e);
+    console.error("diag error", e);
     res.status(500).json({ error: e.message });
   }
 });
 
 // Current user profile (protected)
-app.get('/api/me', verifyToken, async (req, res) => {
+app.get("/api/me", verifyToken, async (req, res) => {
   try {
     const u = await prisma.users.findUnique({
       where: { firebaseUid: req.user.uid },
@@ -299,7 +303,7 @@ app.get('/api/me', verifyToken, async (req, res) => {
     });
     res.json(toJSONSafe({ firebaseUid: req.user.uid, user: u }));
   } catch (e) {
-    console.error('/api/me failed', e);
+    console.error("/api/me failed", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -307,14 +311,14 @@ app.get('/api/me', verifyToken, async (req, res) => {
 /**
  * Floor details: svgMap (protected)
  */
-app.get('/api/floors/:floorId', verifyToken, async (req, res) => {
+app.get("/api/floors/:floorId", verifyToken, async (req, res) => {
   try {
     const floorId = toBi(req.params.floorId);
     const floor = await prisma.floors.findUnique({
       where: { id: floorId },
       select: { id: true, name: true, svgMap: true },
     });
-    if (!floor) return res.status(404).json({ error: 'Floor not found' });
+    if (!floor) return res.status(404).json({ error: "Floor not found" });
 
     res.json({
       id: floor.id.toString(),
@@ -322,13 +326,13 @@ app.get('/api/floors/:floorId', verifyToken, async (req, res) => {
       svgMap: floor.svgMap,
     });
   } catch (err) {
-    console.error('Error fetching floor', err);
-    res.status(500).json({ error: 'Failed to fetch floor' });
+    console.error("Error fetching floor", err);
+    res.status(500).json({ error: "Failed to fetch floor" });
   }
 });
 
 // Floors list (protected)
-app.get('/api/floors', verifyToken, async (req, res) => {
+app.get("/api/floors", verifyToken, async (req, res) => {
   try {
     const floors = await prisma.floors.findMany({
       select: {
@@ -336,10 +340,10 @@ app.get('/api/floors', verifyToken, async (req, res) => {
         name: true,
         building: { select: { id: true, name: true } },
       },
-      orderBy: { id: 'asc' },
+      orderBy: { id: "asc" },
     });
 
-    const payload = floors.map(f => ({
+    const payload = floors.map((f) => ({
       id: f.id.toString(),
       name: f.name,
       buildingId: f.building?.id?.toString?.() ?? null,
@@ -348,13 +352,13 @@ app.get('/api/floors', verifyToken, async (req, res) => {
 
     res.json(payload);
   } catch (err) {
-    console.error('Error fetching floors', err);
-    res.status(500).json({ error: 'Failed to fetch floors' });
+    console.error("Error fetching floors", err);
+    res.status(500).json({ error: "Failed to fetch floors" });
   }
 });
 
 // Floor’s building (protected)
-app.get('/api/floors/:floorId/building', verifyToken, async (req, res) => {
+app.get("/api/floors/:floorId/building", verifyToken, async (req, res) => {
   try {
     const floorId = toBi(req.params.floorId);
     const floor = await prisma.floors.findUnique({
@@ -365,7 +369,7 @@ app.get('/api/floors/:floorId/building', verifyToken, async (req, res) => {
     });
 
     if (!floor || !floor.building) {
-      return res.status(404).json({ error: 'Building not found for floor' });
+      return res.status(404).json({ error: "Building not found for floor" });
     }
 
     res.json({
@@ -373,19 +377,19 @@ app.get('/api/floors/:floorId/building', verifyToken, async (req, res) => {
       name: floor.building.name,
     });
   } catch (err) {
-    console.error('Error fetching building for floor', err);
-    res.status(500).json({ error: 'Failed to fetch building' });
+    console.error("Error fetching building for floor", err);
+    res.status(500).json({ error: "Failed to fetch building" });
   }
 });
 
 /**
  * Devices by AP for a floor (protected)
  */
-app.get('/api/stats/devices-by-ap', verifyToken, async (req, res) => {
+app.get("/api/stats/devices-by-ap", verifyToken, async (req, res) => {
   try {
     const floorIdParam = req.query.floorId;
     if (!floorIdParam) {
-      return res.status(400).json({ error: 'floorId query param is required' });
+      return res.status(400).json({ error: "floorId query param is required" });
     }
     const floorId = toBi(floorIdParam);
 
@@ -398,10 +402,10 @@ app.get('/api/stats/devices-by-ap', verifyToken, async (req, res) => {
         cy: true,
         _count: { select: { client: true } },
       },
-      orderBy: { id: 'asc' },
+      orderBy: { id: "asc" },
     });
 
-    const payload = aps.map(ap => ({
+    const payload = aps.map((ap) => ({
       apId: ap.id.toString(),
       title: ap.name,
       cx: ap.cx,
@@ -411,42 +415,42 @@ app.get('/api/stats/devices-by-ap', verifyToken, async (req, res) => {
 
     res.json({ floorId: floorId.toString(), aps: payload });
   } catch (error) {
-    console.error('Error fetching devices-by-ap', error);
-    res.status(500).json({ error: 'Failed to fetch devices-by-ap' });
+    console.error("Error fetching devices-by-ap", error);
+    res.status(500).json({ error: "Failed to fetch devices-by-ap" });
   }
 });
 
 /**
  * Totals (protected)
  */
-app.get('/api/stats/total-devices', verifyToken, async (req, res) => {
+app.get("/api/stats/total-devices", verifyToken, async (req, res) => {
   try {
     const totalDevices = await prisma.clients.count();
     res.json({ totalDevices });
   } catch (error) {
-    console.error('Error fetching device count', error);
-    res.status(500).json({ error: 'Failed to fetch devices' });
+    console.error("Error fetching device count", error);
+    res.status(500).json({ error: "Failed to fetch devices" });
   }
 });
 
-app.get('/api/stats/total-aps', verifyToken, async (req, res) => {
+app.get("/api/stats/total-aps", verifyToken, async (req, res) => {
   try {
     const totalAps = await prisma.aPs.count();
     res.json({ totalAps });
   } catch (error) {
-    console.error('Error fetching AP count', error);
-    res.status(500).json({ error: 'Failed to fetch APs' });
+    console.error("Error fetching AP count", error);
+    res.status(500).json({ error: "Failed to fetch APs" });
   }
 });
 
 /**
  * Create a client device record (attach to an AP) — protected
  */
-app.post('/api/clients', verifyToken, async (req, res) => {
+app.post("/api/clients", verifyToken, async (req, res) => {
   try {
     const { mac, apId } = req.body;
     if (!mac || !apId) {
-      return res.status(400).json({ error: 'mac and apId are required' });
+      return res.status(400).json({ error: "mac and apId are required" });
     }
 
     const created = await prisma.clients.create({
@@ -464,59 +468,80 @@ app.post('/api/clients', verifyToken, async (req, res) => {
       createdAt: created.createdAt,
     });
   } catch (error) {
-    console.error('Error creating client device:', error);
-    res.status(500).json({ error: 'Failed to create client' });
+    console.error("Error creating client device:", error);
+    res.status(500).json({ error: "Failed to create client" });
   }
 });
 
+// GET the AP connection(s) for a user's registered devices (by MAC).
+// Returns the most recent AP per device MAC the user owns.
 app.get('/api/users/:userId/ap-connection', verifyToken, async (req, res) => {
   try {
+    const toBi = (v) => {
+      const s = String(v);
+      if (!/^\d+$/.test(s)) throw new Error(`Invalid ID: ${s}`);
+      return BigInt(s);
+    };
+
     const userId = toBi(req.params.userId);
 
-    // check ownership/permission
     const userRow = await prisma.users.findUnique({
       where: { id: userId },
       select: { firebaseUid: true },
     });
 
-    // Gets user's registered devices
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Ensure the authed user matches the requested user
+    if (req.user?.uid !== userRow.firebaseUid) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // Get user's registered device MACs
     const devices = await prisma.userDevices.findMany({
       where: { userId },
       select: { mac: true },
+      orderBy: { id: 'asc' },
     });
+
     if (!devices.length) {
       return res.status(404).json({ error: 'User has no registered device MAC' });
     }
 
-    const normalizedMac = devices[0].mac.trim().toLowerCase();
+    const results = [];
+    for (const d of devices) {
+      const normalizedMac = d.mac.trim().toLowerCase();
 
-    const client = await prisma.clients.findFirst({
-      where: {
-        mac: { equals: normalizedMac, mode: 'insensitive' },
-      },
-      orderBy: { updatedAt: 'desc' },
-      select: {
-        apId: true,
-        updatedAt: true,
-        ap: {
-          select: { id: true, name: true, floorId: true },
+      const client = await prisma.clients.findFirst({
+        where: {
+          mac: { equals: normalizedMac, mode: 'insensitive' },
         },
-      },
-    });
+        orderBy: { updatedAt: 'desc' },
+        select: {
+          apId: true,
+          updatedAt: true,
+          ap: {
+            select: { id: true, name: true, floorId: true },
+          },
+        },
+      });
 
-    if (!client || !client.ap) {
-      return res.json({ mac: normalizedMac, ap: null });
+      results.push({
+        mac: normalizedMac,
+        ap: client?.ap
+          ? {
+              id: client.ap.id.toString(),
+              name: client.ap.name,
+              floorId: client.ap.floorId?.toString(),
+            }
+          : null,
+        updatedAt: client?.updatedAt ?? null,
+      });
     }
 
-    return res.json({
-      mac: normalizedMac,
-      ap: {
-        id: client.ap.id.toString(),
-        name: client.ap.name,
-        floorId: client.ap.floorId?.toString(),
-      },
-      updatedAt: client.updatedAt, // place it here if you prefer
-    });
+    return res.json({ connections: results });
   } catch (error) {
     console.error('ap-connection lookup failed', error);
     return res.status(500).json({ error: 'Failed to resolve AP connection' });
