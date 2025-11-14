@@ -556,6 +556,19 @@ html, body {
 /* Ensure tabs don’t sit above dropdown menus */
 .auth-tabs { position: relative; z-index: 5; }
 
+/* Add in FloorDashboard.css or a CSS file that’s imported */
+.ft-multi-select {
+  min-height: 120px;
+  pointer-events: auto;         /* ensure clickable */
+  position: relative;           /* create a stacking context */
+  z-index: 1;                   /* above backgrounds */
+}
+
+/* If your layout uses overlays (menus, dropdowns), ensure they don’t overlap this panel unintentionally */
+.ft-panel, .ft-stat-card {
+  position: relative;
+}
+
 
 /* Responsive */
 

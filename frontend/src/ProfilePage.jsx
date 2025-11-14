@@ -133,6 +133,24 @@ export default function ProfilePage() {
     }
   };
 
+  const deleteMyAccount = async () => {
+    const sure = window.confirm(
+      'This will permanently delete your account, your devices, and group memberships. This action cannot be undone. Do you want to proceed?'
+    );
+    if (!sure) return;
+
+    setBusy(true); clearAlerts();
+    try {
+      await api('/api/profile', { method: 'DELETE' });
+      // Redirect to auth page (or landing)
+      window.location.href = '/';
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="ft-root">
@@ -153,8 +171,8 @@ export default function ProfilePage() {
       {/* App bar */}
       <div className="ft-appbar">
         <div className="ft-brand">
-          <a href= "/home">
-          <div className="ft-brand-icon"><img src={logo} className="ft-brand-icon" /></div>
+          <a href="/home">
+            <div className="ft-brand-icon"><img src={logo} className="ft-brand-icon" /></div>
           </a>
           <div className="ft-brand-text">Profile</div>
         </div>
@@ -212,6 +230,24 @@ export default function ProfilePage() {
               <div>Password</div>
               <button className="auth-submit-btn" disabled={busy} onClick={sendPasswordReset}>Send reset email</button>
             </div>
+            <div className="ft-panel" style={{ marginTop: 16, borderColor: '#3a1a1a' }}>
+              <div className="ft-panel-header">
+                <div className="ft-panel-title" style={{ color: '#FCA5A5' }}>Danger zone</div>
+                <div className="ft-panel-sub">Irreversible actions</div>
+              </div>
+              <div className="ft-stat-card" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>Delete your account and all related data</div>
+                <button
+                  className="auth-submit-btn"
+                  style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: '#3a1a1a', color: '#ffb3b3' }}
+                  disabled={busy}
+                  onClick={deleteMyAccount}
+                >
+                  Permanently delete
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
 

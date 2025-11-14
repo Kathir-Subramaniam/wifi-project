@@ -7,6 +7,7 @@ const prisma = new PrismaClient();
 const firebaseAuthController = require("../controllers/firebase-auth-controller");
 const verifyToken = require("../middleware");
 const PostsController = require("../controllers/posts-controller.js");
+const { admin } = require('../config/firebase');
 const {
   getAppUser,
   canManageBuilding,
@@ -719,44 +720,89 @@ router.get('/api/admin/pending-users', verifyToken, async (req, res) => {
 });
 
 // Assign role + group to a pending user
+// REPLACE-ALL: assign role and replace groups set with groupIds[]
 router.post('/api/admin/pending-users/:id/assign', verifyToken, async (req, res) => {
   try {
-    const me = await prisma.users.findUnique({
-      where: { firebaseUid: req.user.uid },
-      include: { role: true },
-    });
-    if (!me || me.role?.name !== 'Owner') return res.status(403).json({ error: 'Forbidden' });
+    // const owner = await ensureOwner(req, prisma);
+    // if (!owner) return res.status(403).json({ error: 'Forbidden' });
 
     const userId = toBi(req.params.id);
-    const { roleId, groupId } = req.body;
-    if (!roleId || !groupId) return res.status(400).json({ error: 'roleId and groupId required' });
+    const { roleId, groupIds } = req.body || {};
 
-    const roleBi = toBi(roleId);
-    const groupBi = toBi(groupId);
+    if (!roleId || !Array.isArray(groupIds) || groupIds.length === 0) {
+      return res.status(400).json({ error: 'roleId and groupIds[] are required' });
+    }
 
+    // Validate user
     const user = await prisma.users.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Update role
+    // Assign role
     await prisma.users.update({
       where: { id: userId },
-      data: { roleId: roleBi },
+      data: { roleId: toBi(roleId) },
     });
 
-    // Attach group membership (create link if not exists)
-    // If you want to ensure only one group, you could clear previous userGroups first.
-    await prisma.userGroups.create({
-      data: { userId, groupId: groupBi },
-    });
+    // Replace group memberships
+    await prisma.$transaction([
+      prisma.userGroups.deleteMany({ where: { userId } }),
+      prisma.userGroups.createMany({
+        data: groupIds.map(gid => ({ userId, groupId: toBi(gid) })),
+        skipDuplicates: true, // Prisma 4.4+ supports this
+      }),
+    ]);
 
     res.json({ ok: true });
   } catch (e) {
-    console.error('assign pending user failed', e);
-    const msg = /Unique|unique/.test(e.message) ? 'User already in group' : 'Failed to assign';
-    res.status(400).json({ error: msg });
+    console.error('POST /api/admin/pending-users/:id/assign replace-all failed', e);
+    res.status(400).json({ error: 'Failed to assign' });
   }
 });
 
 
+router.delete('/api/profile', verifyToken, async (req, res) => {
+  const firebaseUid = req.user?.uid;
+  if (!firebaseUid) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    // Find the app user by Firebase UID
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid },
+      select: { id: true, firebaseUid: true },
+    });
+    if (!user) {
+      // If app user not found, still attempt to delete Firebase user
+      try { await admin.auth().deleteUser(firebaseUid); } catch {}
+      res.clearCookie('access_token');
+      return res.json({ ok: true });
+    }
+
+    // Transaction to delete related data first, then the user
+    await prisma.$transaction(async (tx) => {
+      // 1) Remove from UserGroups
+      await tx.userGroups.deleteMany({ where: { userId: user.id } });
+
+      // 2) Remove UserDevices
+      await tx.userDevices.deleteMany({ where: { userId: user.id } });
+
+      // 3) If you have more relations tied to Users, delete them here in the right order
+
+      // 4) Finally delete the Users row
+      await tx.users.delete({ where: { id: user.id } });
+    });
+
+    // Delete Firebase account after DB transaction succeeds
+    await admin.auth().deleteUser(firebaseUid);
+
+    // Clear session cookie
+    res.clearCookie('access_token');
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('Delete profile failed', e);
+    return res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
 
 module.exports = router;

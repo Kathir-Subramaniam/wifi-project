@@ -19,14 +19,6 @@ async function fetchFloorDetail(floorId) {
   return api(`/api/floors/${floorId}`);
 }
 
-const readFileAsText = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsText(file, 'utf-8');
-  });
-
 // debounce helper for text inputs
 function useDebounce(fn, delay = 300) {
   const timer = useRef(null);
@@ -102,7 +94,9 @@ function SortDropdown({ fields, value, order, onChange }) {
       if (
         menuRef.current && !menuRef.current.contains(e.target) &&
         btnRef.current && !btnRef.current.contains(e.target)
-      ) setOpen(false);
+      ) {
+        setOpen(false);
+      }
     };
     const onEsc = (e) => e.key === 'Escape' && setOpen(false);
     document.addEventListener('mousedown', onDocClick);
@@ -272,80 +266,39 @@ function UserMenu({ email, name, onLogout }) {
   );
 }
 
-// Themed confirmation modal
-function ConfirmModal({ open, title = 'Confirm', body, confirmText = 'Confirm', cancelText = 'Cancel', onConfirm, onCancel }) {
-  if (!open) return null;
-  return (
-    <div role="dialog" aria-modal="true" className="ft-modal">
-      <div className="ft-modal-card">
-        <div className="ft-modal-title">{title}</div>
-        <div className="ft-modal-body">{body}</div>
-        <div className="ft-actions" style={{ justifyContent: 'flex-end' }}>
-          <button className="auth-submit-btn" onClick={onCancel}>{cancelText}</button>
-          <button className="auth-submit-btn" onClick={onConfirm} style={{ marginLeft: 8 }}>{confirmText}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function AdminDashboard() {
   const [tab, setTab] = useState('buildings');
+
   const [buildings, setBuildings] = useState([]);
   const [floors, setFloors] = useState([]);
   const [aps, setAps] = useState([]);
   const [devices, setDevices] = useState([]);
-  const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState(null);
-
-  // New tabs
   const [groups, setGroups] = useState([]);
   const [globalPerms, setGlobalPerms] = useState([]);
-
-  // Create fields (new)
-  const [grpName, setGrpName] = useState('');
-
-  // GlobalPermissions create fields
-  const [gpGroupId, setGpGroupId] = useState('');
-  const [gpBuildingId, setGpBuildingId] = useState('');
-  const [gpFloorId, setGpFloorId] = useState('');
-
-  // Edit state
-  const [editGroup, setEditGroup] = useState({});
-
-  // Pending Users data
   const [pendingUsers, setPendingUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
 
-  // Form state for assigning role + group per pending user
-  // { [userId]: { roleId: string, groupId: string } }
-  const [assignPending, setAssignPending] = useState({});
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
 
-  // For dropdowns (reuse existing roles list if you have one; if not, fetch)
-  const [roles, setRoles] = useState([]); // [{id, name}] — must include "Owner", "Organisation Admin", "Site Admin", "Pending User", etc.
-
-
-  // Modal state for deletes
-  const [confirmState, setConfirmState] = useState(null);
-  // confirmState = { kind: 'buildings'|'floors'|'aps'|'devices', id: string|number }
-
-  useEffect(() => {
-    if (!message) return;
-    const t = setTimeout(() => setMessage(null), 2500);
-    return () => clearTimeout(t);
-  }, [message]);
-
-  // Floors edit state
+  // Floors editor state
   const [floorEditMap, setFloorEditMap] = useState({}); // { [id]: { name, svgMap, __fileName, __error } }
   const floorDebounceTimers = useRef({}); // { [id]: number }
-
+  const debouncedSetFloorSvg = (id, value) => {
+    if (floorDebounceTimers.current[id]) {
+      clearTimeout(floorDebounceTimers.current[id]);
+    }
+    floorDebounceTimers.current[id] = setTimeout(() => {
+      setFloorEditField(id, { svgMap: value });
+      delete floorDebounceTimers.current[id];
+    }, 300);
+  };
   const setFloorEditField = (id, patch) => {
     setFloorEditMap(prev => {
       const cur = prev[id] || {};
       return { ...prev, [id]: { ...cur, ...patch } };
     });
   };
-
   const beginEditFloor = async (f) => {
     const id = f?.id;
     if (!id) return;
@@ -362,17 +315,7 @@ export default function AdminDashboard() {
     }
   };
 
-  const debouncedSetFloorSvg = (id, value) => {
-    if (floorDebounceTimers.current[id]) {
-      clearTimeout(floorDebounceTimers.current[id]);
-    }
-    floorDebounceTimers.current[id] = setTimeout(() => {
-      setFloorEditField(id, { svgMap: value });
-      delete floorDebounceTimers.current[id];
-    }, 300);
-  };
-
-  // Sorting
+  // Sort states
   const [sortBuildings, setSortBuildings] = useState({ field: 'name', order: 'asc' });
   const [sortFloors, setSortFloors] = useState({ field: 'buildingName', order: 'asc' });
   const [sortAPs, setSortAPs] = useState({ field: 'buildingId', order: 'asc' });
@@ -381,58 +324,56 @@ export default function AdminDashboard() {
   const [sortGlobalPerms, setSortGlobalPerms] = useState({ field: 'groupName', order: 'asc' });
   const [sortPending, setSortPending] = useState({ field: 'email', order: 'asc' });
 
-  const pendingSorted = useMemo(() =>
-    sortWith(
-      pendingUsers,
-      ...(function () {
-        const f = sortPending.field;
-        const ord = sortPending.order;
-        if (f === 'email') return [by(x => x.email || '', ord)];
-        if (f === 'id') return [by(x => Number(x.id), ord)];
-        if (f === 'createdAt') return [by(x => new Date(x.createdAt).getTime(), ord)];
-        return [by(x => x.email || '', ord)];
-      })(),
-      by(x => x.email || '', 'asc'),
-      by(x => Number(x.id), 'asc')
-    ), [pendingUsers, sortPending]
-  );
+  // Edit state
+  const [editBuilding, setEditBuilding] = useState({});
+  const [editFloor, setEditFloor] = useState({});
+  const [editAP, setEditAP] = useState({});
+  const [editDevice, setEditDevice] = useState({});
+  const [editGroup, setEditGroup] = useState({});
 
+  // Create fields
+  const [bName, setBName] = useState('');
+  const [fName, setFName] = useState('');
+  const [fSvg, setFSvg] = useState('');
+  const [fBuildingId, setFBuildingId] = useState('');
+  const [apName, setApName] = useState('');
+  const [apCx, setApCx] = useState('');
+  const [apCy, setApCy] = useState('');
+  const [apFloorId, setApFloorId] = useState('');
+  const [devMac, setDevMac] = useState('');
+  const [devApId, setDevApId] = useState('');
 
-  const groupsSorted = useMemo(() =>
-    sortWith(
-      groups,
-      ...(function () {
-        const f = sortGroups.field;
-        const ord = sortGroups.order;
-        if (f === 'name') return [by(x => x.name, ord)];
-        return [by(x => Number(x.id), ord)];
-      })(),
-      by(x => x.name, 'asc'),
-      by(x => Number(x.id), 'asc')
-    ), [groups, sortGroups]
-  );
+  // Groups create
+  const [grpName, setGrpName] = useState('');
 
-  const globalPermsSorted = useMemo(() =>
-    sortWith(
-      globalPerms,
-      ...(function () {
-        const f = sortGlobalPerms.field;
-        const ord = sortGlobalPerms.order;
-        if (f === 'groupName') return [by(x => x.groupName || '', ord)];
-        if (f === 'buildingName') return [by(x => x.buildingName || '', ord)];
-        if (f === 'floorName') return [by(x => x.floorName || '', ord)];
-        if (f === 'groupId') return [by(x => Number(x.groupId), ord)];
-        if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
-        if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
-        return [by(x => Number(x.id), ord)];
-      })(),
-      by(x => x.groupName || '', 'asc'),
-      by(x => x.buildingName || '', 'asc'),
-      by(x => x.floorName || '', 'asc'),
-      by(x => Number(x.id), 'asc')
-    ), [globalPerms, sortGlobalPerms]
-  );
+  // GlobalPermissions create
+  const [gpGroupId, setGpGroupId] = useState('');
+  const [gpBuildingId, setGpBuildingId] = useState('');
+  const [gpFloorId, setGpFloorId] = useState('');
 
+  // Pending Users assignment: { [userId]: { roleId: string, groupIds: string[] } }
+  const [assignPending, setAssignPending] = useState({});
+
+  // Profile for user menu
+  const [profile, setProfile] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const p = await api('/api/profile');
+        setProfile(p);
+      } catch { }
+    })();
+  }, []);
+  const onLogout = async () => {
+    try {
+      await api('/api/logout', { method: 'POST' });
+      window.location.href = '/auth';
+    } catch { }
+  };
+  const displayName = `${profile?.user?.firstName || ''} ${profile?.user?.lastName || ''}`.trim();
+  const email = profile?.user?.email;
+
+  // Sorted lists
   const buildingsSorted = useMemo(() =>
     sortWith(
       buildings,
@@ -490,6 +431,57 @@ export default function AdminDashboard() {
       by(x => Number(x.id), 'asc')
     ), [devices, sortDevices]);
 
+  const groupsSorted = useMemo(() =>
+    sortWith(
+      groups,
+      ...(function () {
+        const f = sortGroups.field;
+        const ord = sortGroups.order;
+        if (f === 'name') return [by(x => x.name, ord)];
+        return [by(x => Number(x.id), ord)];
+      })(),
+      by(x => x.name, 'asc'),
+      by(x => Number(x.id), 'asc')
+    ), [groups, sortGroups]
+  );
+
+  const globalPermsSorted = useMemo(() =>
+    sortWith(
+      globalPerms,
+      ...(function () {
+        const f = sortGlobalPerms.field;
+        const ord = sortGlobalPerms.order;
+        if (f === 'groupName') return [by(x => x.groupName || '', ord)];
+        if (f === 'buildingName') return [by(x => x.buildingName || '', ord)];
+        if (f === 'floorName') return [by(x => x.floorName || '', ord)];
+        if (f === 'groupId') return [by(x => Number(x.groupId), ord)];
+        if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
+        if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
+        return [by(x => Number(x.id), ord)];
+      })(),
+      by(x => x.groupName || '', 'asc'),
+      by(x => x.buildingName || '', 'asc'),
+      by(x => x.floorName || '', 'asc'),
+      by(x => Number(x.id), 'asc')
+    ), [globalPerms, sortGlobalPerms]
+  );
+
+  const pendingSorted = useMemo(() =>
+    sortWith(
+      pendingUsers,
+      ...(function () {
+        const f = sortPending.field;
+        const ord = sortPending.order;
+        if (f === 'email') return [by(x => x.email || '', ord)];
+        if (f === 'id') return [by(x => Number(x.id), ord)];
+        if (f === 'createdAt') return [by(x => new Date(x.createdAt).getTime(), ord)];
+        return [by(x => x.email || '', ord)];
+      })(),
+      by(x => x.email || '', 'asc'),
+      by(x => Number(x.id), 'asc')
+    ), [pendingUsers, sortPending]
+  );
+
   const reload = async () => {
     setError(null);
     try {
@@ -500,8 +492,8 @@ export default function AdminDashboard() {
         api('/api/admin/devices'),
         api('/api/admin/groups'),
         api('/api/admin/global-permissions'),
-        api('/api/admin/pending-users'), // NEW
-        api('/api/admin/roles'),         // NEW (to populate role dropdown)
+        api('/api/admin/pending-users'),
+        api('/api/admin/roles'),
       ]);
 
       if (b.status === 'fulfilled') setBuildings(b.value);
@@ -517,36 +509,37 @@ export default function AdminDashboard() {
     }
   };
 
-
-
   useEffect(() => { reload(); }, []);
 
-  const assignUserRoleAndGroup = async (userId) => {
-    const payload = assignPending[userId];
-    if (!payload || !payload.roleId || !payload.groupId) {
-      setError('Please select both role and group');
-      return;
-    }
+  // Create handlers
+  const onCreateBuilding = async (name) => {
     setBusy(true); setError(null);
     try {
-      await api(`/api/admin/pending-users/${userId}/assign`, {
-        method: 'POST',
-        body: JSON.stringify({
-          roleId: payload.roleId,
-          groupId: payload.groupId,
-        }),
-      });
-      setAssignPending(prev => { const next = { ...prev }; delete next[userId]; return next; });
+      await api('/api/admin/buildings', { method: 'POST', body: JSON.stringify({ name }) });
       await reload();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
-
-
-  // Groups
+  const onCreateFloor = async (name, svgMap, buildingId) => {
+    setBusy(true); setError(null);
+    try {
+      await api('/api/admin/floors', { method: 'POST', body: JSON.stringify({ name, svgMap, buildingId }) });
+      await reload();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+  const onCreateAP = async (name, cx, cy, floorId) => {
+    setBusy(true); setError(null);
+    try {
+      await api('/api/admin/aps', { method: 'POST', body: JSON.stringify({ name, cx: Number(cx), cy: Number(cy), floorId }) });
+      await reload();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+  const onCreateDevice = async (mac, apId) => {
+    setBusy(true); setError(null);
+    try {
+      await api('/api/admin/devices', { method: 'POST', body: JSON.stringify({ mac, apId }) });
+      await reload();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
   const onCreateGroup = async (name) => {
     setBusy(true); setError(null);
     try {
@@ -555,117 +548,28 @@ export default function AdminDashboard() {
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
-
-  const saveGroup = async (id) => {
-    const payload = editGroup[id];
-    if (!payload) return;
-    setBusy(true); setError(null);
-    try {
-      await api(`/api/admin/groups/${id}`, { method: 'PUT', body: JSON.stringify({ name: payload.name }) });
-      setEditGroup(prev => { const p = { ...prev }; delete p[id]; return p; });
-      await reload();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
-  };
-
-  const onDeleteGroup = async (id) => {
-    setBusy(true); setError(null);
-    try {
-      await api(`/api/admin/groups/${id}`, { method: 'DELETE' });
-      await reload();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
-  };
-
-  // GlobalPermissions
   const onCreateGlobalPermission = async (groupId, buildingId, floorId) => {
     setBusy(true); setError(null);
     try {
-      // Require all three — or allow any combination? Here we require all 3 as per your request.
-      if (!groupId || !buildingId || !floorId) {
-        throw new Error('group, building, and floor are required');
-      }
-      await api('/api/admin/global-permissions', {
-        method: 'POST',
-        body: JSON.stringify({ groupId, buildingId, floorId }),
-      });
+      if (!groupId || !buildingId || !floorId) throw new Error('group, building, and floor are required');
+      await api('/api/admin/global-permissions', { method: 'POST', body: JSON.stringify({ groupId, buildingId, floorId }) });
       setGpGroupId(''); setGpBuildingId(''); setGpFloorId('');
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
-  const onDeleteGlobalPermission = async (id) => {
-    setBusy(true); setError(null);
-    try {
-      await api(`/api/admin/global-permissions/${id}`, { method: 'DELETE' });
-      await reload();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
-  };
-
-
-  // Create handlers with success messages and clearing inputs
-  const onCreateBuilding = async (name) => {
-    setBusy(true); setError(null);
-    try {
-      await api('/api/admin/buildings', { method: 'POST', body: JSON.stringify({ name }) });
-      setMessage('Building created');
-      setBName(''); // clear input
-      await reload();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
-  };
-  const onCreateFloor = async (name, svgMap, buildingId) => {
-    setBusy(true); setError(null);
-    try {
-      await api('/api/admin/floors', { method: 'POST', body: JSON.stringify({ name, svgMap, buildingId }) });
-      setMessage('Floor created');
-      setFName(''); setFSvg(''); setFBuildingId(''); // clear inputs
-      setEditFloor(prev => ({ ...prev, __createFile__: null })); // clear badge
-      await reload();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
-  };
-  const onCreateAP = async (name, cx, cy, floorId) => {
-    setBusy(true); setError(null);
-    try {
-      await api('/api/admin/aps', { method: 'POST', body: JSON.stringify({ name, cx: Number(cx), cy: Number(cy), floorId }) });
-      setMessage('AP created');
-      setApName(''); setApCx(''); setApCy(''); setApFloorId(''); // clear inputs
-      await reload();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
-  };
-  const onCreateDevice = async (mac, apId) => {
-    setBusy(true); setError(null);
-    try {
-      await api('/api/admin/devices', { method: 'POST', body: JSON.stringify({ mac, apId }) });
-      setMessage('Device added');
-      setDevMac(''); setDevApId(''); // clear inputs
-      await reload();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
-  };
-
-  // Delete using modal
-  const requestDelete = (kind, id) => {
-    setConfirmState({ kind, id });
-  };
-
-  const performDelete = async () => {
-    if (!confirmState) return;
-    const { kind, id } = confirmState;
-    const singular = kind.slice(0, -1);
-    setConfirmState(null);
-
+  // Delete
+  const onDelete = async (kind, id) => {
     setBusy(true); setError(null);
     try {
       await api(`/api/admin/${kind}/${id}`, { method: 'DELETE' });
-      setMessage(`${singular[0].toUpperCase() + singular.slice(1)} deleted`);
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
+  const onDeleteGroup = async (id) => onDelete('groups', id);
+  const onDeleteGlobalPermission = async (id) => onDelete('global-permissions', id);
 
-  // Edit state
-  const [editBuilding, setEditBuilding] = useState({});
-  const [editFloor, setEditFloor] = useState({});
-  const [editAP, setEditAP] = useState({});
-  const [editDevice, setEditDevice] = useState({});
-
-  // Save edits with success messages
+  // Save edits
   const saveBuilding = async (id) => {
     const payload = editBuilding[id];
     if (!payload) return;
@@ -673,12 +577,11 @@ export default function AdminDashboard() {
     try {
       await api(`/api/admin/buildings/${id}`, { method: 'PUT', body: JSON.stringify({ name: payload.name }) });
       setEditBuilding(prev => { const p = { ...prev }; delete p[id]; return p; });
-      setMessage('Building updated');
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
   const saveFloor = async (id) => {
-    const payload = floorEditMap[id] || editFloor[id];
+    const payload = editFloor[id];
     if (!payload) return;
     setBusy(true); setError(null);
     try {
@@ -686,9 +589,7 @@ export default function AdminDashboard() {
       if (payload.name != null) body.name = payload.name;
       if (payload.svgMap != null) body.svgMap = payload.svgMap;
       await api(`/api/admin/floors/${id}`, { method: 'PUT', body: JSON.stringify(body) });
-      setFloorEditMap(prev => { const p = { ...prev }; delete p[id]; return p; });
       setEditFloor(prev => { const p = { ...prev }; delete p[id]; return p; });
-      setMessage('Floor updated');
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -703,7 +604,6 @@ export default function AdminDashboard() {
       if (payload.cy != null) body.cy = Number(payload.cy);
       await api(`/api/admin/aps/${id}`, { method: 'PUT', body: JSON.stringify(body) });
       setEditAP(prev => { const p = { ...prev }; delete p[id]; return p; });
-      setMessage('AP updated');
       await reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -712,41 +612,46 @@ export default function AdminDashboard() {
     if (!payload) return;
     setBusy(true); setError(null);
     try {
-      // Implement PUT /api/admin/devices/:id to enable edits
       throw new Error('Device edit is not enabled yet. Please implement PUT /api/admin/devices/:id');
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
-
-  // Create fields
-  const [bName, setBName] = useState('');
-  const [fName, setFName] = useState('');
-  const [fSvg, setFSvg] = useState('');
-  const [fBuildingId, setFBuildingId] = useState('');
-  const [apName, setApName] = useState('');
-  const [apCx, setApCx] = useState('');
-  const [apCy, setApCy] = useState('');
-  const [apFloorId, setApFloorId] = useState('');
-  const [devMac, setDevMac] = useState('');
-  const [devApId, setDevApId] = useState('');
-
-  // User menu data
-  const [profile, setProfile] = useState(null);
-  useEffect(() => {
-    (async () => {
-      try {
-        const p = await api('/api/profile');
-        setProfile(p);
-      } catch { }
-    })();
-  }, []);
-  const onLogout = async () => {
+  const saveGroup = async (id) => {
+    const payload = editGroup[id];
+    if (!payload) return;
+    setBusy(true); setError(null);
     try {
-      await api('/api/logout', { method: 'POST' });
-      window.location.href = '/';
-    } catch { }
+      await api(`/api/admin/groups/${id}`, { method: 'PUT', body: JSON.stringify({ name: payload.name }) });
+      setEditGroup(prev => { const p = { ...prev }; delete p[id]; return p; });
+      await reload();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
-  const displayName = `${profile?.user?.firstName || ''} ${profile?.user?.lastName || ''}`.trim();
-  const email = profile?.user?.email;
+
+  // Assign pending user: role + multiple groups
+  const assignUserRoleAndGroup = async (userId) => {
+    const payload = assignPending[userId];
+    if (!payload || !payload.roleId || !Array.isArray(payload.groupIds) || payload.groupIds.length === 0) {
+      setError('Please select a role and at least one group');
+      return;
+    }
+    setBusy(true); setError(null);
+    try {
+      console.log(payload.roleId)
+      console.log(payload.groupIds.map(String))
+      await api(`/api/admin/pending-users/${userId}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({
+          roleId: payload.roleId,
+          groupIds: payload.groupIds.map(String),
+        }),
+      });
+      setAssignPending(prev => { const next = { ...prev }; delete next[userId]; return next; });
+      await reload();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const TabButton = ({ id, label }) => (
     <button className={`auth-tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>{label}</button>
@@ -765,142 +670,16 @@ export default function AdminDashboard() {
       </div>
 
       <div className="auth-tabs" style={{ marginBottom: 16 }}>
-        <TabButton id="globalPermissions" label="GlobalPermissions" />
-        <TabButton id="groups" label="Groups" />
         <TabButton id="buildings" label="Buildings" />
         <TabButton id="floors" label="Floors" />
         <TabButton id="aps" label="APs" />
         <TabButton id="devices" label="Devices" />
+        <TabButton id="groups" label="Groups" />
+        <TabButton id="globalPermissions" label="GlobalPermissions" />
         <TabButton id="pendingUsers" label="Pending Users" />
       </div>
 
       {error && <div className="auth-alert auth-alert-error" style={{ marginBottom: 12 }}>{String(error)}</div>}
-      {message && <div className="auth-alert auth-alert-success" style={{ marginBottom: 12 }}>{String(message)}</div>}
-
-      {/* GlobalPermissions */}
-      {tab === 'globalPermissions' && (
-        <div className="ft-panel">
-          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <div>
-              <div className="ft-panel-title">Global Permissions</div>
-              <div className="ft-panel-sub">Map a Group to Building and Floor</div>
-            </div>
-            <SortBar
-              fields={[
-                { value: 'groupName', label: 'Group name' },
-                { value: 'buildingName', label: 'Building name' },
-                { value: 'floorName', label: 'Floor name' },
-                { value: 'groupId', label: 'Group ID' },
-                { value: 'buildingId', label: 'Building ID' },
-                { value: 'floorId', label: 'Floor ID' },
-                { value: 'id', label: 'Record ID' },
-              ]}
-              value={sortGlobalPerms.field}
-              order={sortGlobalPerms.order}
-              onField={v => setSortGlobalPerms(s => ({ ...s, field: v }))}
-              onOrder={v => setSortGlobalPerms(s => ({ ...s, order: v }))}
-            />
-          </div>
-
-          {/* Create */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 12 }}>
-            <select className="auth-input" value={gpGroupId} onChange={e => setGpGroupId(e.target.value)}>
-              <option value="">Select group</option>
-              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-
-            <select className="auth-input" value={gpBuildingId} onChange={e => setGpBuildingId(e.target.value)}>
-              <option value="">Select building</option>
-              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-
-            <select className="auth-input" value={gpFloorId} onChange={e => setGpFloorId(e.target.value)}>
-              <option value="">Select floor</option>
-              {floors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
-
-            <button
-              className="auth-submit-btn"
-              disabled={busy || !gpGroupId || !gpBuildingId || !gpFloorId}
-              onClick={() => onCreateGlobalPermission(gpGroupId, gpBuildingId, gpFloorId)}
-            >
-              Add
-            </button>
-          </div>
-
-          {/* List */}
-          {globalPermsSorted.map(rec => (
-            <div key={rec.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div className="ft-title-line">
-                  Group: {rec.groupName || `G#${rec.groupId}`} • Building: {rec.buildingName || `B#${rec.buildingId}`} • Floor: {rec.floorName || `F#${rec.floorId}`}
-                </div>
-                <div className="ft-legend-sub">Record #{rec.id}</div>
-              </div>
-              <div className="ft-actions">
-                {/* Optional: add Edit in the future */}
-                <button className="auth-submit-btn" disabled={busy} onClick={() => onDeleteGlobalPermission(rec.id)}>Delete</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-
-      {/* Groups */}
-      {tab === 'groups' && (
-        <div className="ft-panel">
-          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <div>
-              <div className="ft-panel-title">Groups</div>
-              <div className="ft-panel-sub">Create, edit, or delete groups</div>
-            </div>
-            <SortBar
-              fields={[
-                { value: 'name', label: 'Name' },
-                { value: 'id', label: 'ID' },
-              ]}
-              value={sortGroups.field}
-              order={sortGroups.order}
-              onField={v => setSortGroups(s => ({ ...s, field: v }))}
-              onOrder={v => setSortGroups(s => ({ ...s, order: v }))}
-            />
-          </div>
-
-          {/* Create */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <input className="auth-input" placeholder="Group name" value={grpName} onChange={e => setGrpName(e.target.value)} />
-            <button className="auth-submit-btn" disabled={busy || !grpName} onClick={() => onCreateGroup(grpName)}>Add</button>
-          </div>
-
-          {/* List + edit */}
-          {groupsSorted.map(g => {
-            const editing = editGroup[g.id] || null;
-            return (
-              <div key={g.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                {editing ? (
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
-                    <input className="auth-input" value={editing.name ?? g.name}
-                      onChange={e => setEditGroup(prev => ({ ...prev, [g.id]: { ...editing, name: e.target.value } }))} />
-                    <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => saveGroup(g.id)}>Save</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => setEditGroup(prev => { const p = { ...prev }; delete p[g.id]; return p; })}>Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div>{g.name} (#{g.id})</div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => setEditGroup(prev => ({ ...prev, [g.id]: { name: g.name } }))}>Edit</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDeleteGroup(g.id)}>Delete</button>
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {/* Buildings */}
       {tab === 'buildings' && (
@@ -936,7 +715,7 @@ export default function AdminDashboard() {
                 {editing ? (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
                     <input className="auth-input" value={editing.name ?? b.name} onChange={e => setEditBuilding(prev => ({ ...prev, [b.id]: { ...editing, name: e.target.value } }))} />
-                    <div className="ft-actions" style={{ marginLeft: 'auto' }}>
+                    <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => saveBuilding(b.id)}>Save</button>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditBuilding(prev => { const p = { ...prev }; delete p[b.id]; return p; })}>Cancel</button>
                     </div>
@@ -944,9 +723,9 @@ export default function AdminDashboard() {
                 ) : (
                   <>
                     <div>{b.name} (#{b.id})</div>
-                    <div className="ft-actions">
+                    <div style={{ display: 'flex', gap: 8 }}>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditBuilding(prev => ({ ...prev, [b.id]: { name: b.name } }))}>Edit</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => requestDelete('buildings', b.id)}>Delete</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('buildings', b.id)}>Delete</button>
                     </div>
                   </>
                 )}
@@ -994,9 +773,15 @@ export default function AdminDashboard() {
                 if (!file) return;
                 try {
                   setBusy(true);
-                  const text = (await readFileAsText(file)).trim();
-                  if (!/^<\s*svg[\s>]/i.test(text)) throw new Error('Selected file is not an SVG');
-                  setFSvg(text);
+                  const text = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(String(reader.result || ''));
+                    reader.onerror = () => reject(new Error('Failed to read file'));
+                    reader.readAsText(file, 'utf-8');
+                  });
+                  const trimmed = text.trim();
+                  if (!/^\s*<\s*svg[\s>]/i.test(trimmed)) throw new Error('Selected file is not an SVG');
+                  setFSvg(trimmed);
                   setEditFloor(prev => ({ ...prev, __createFile__: { name: file.name } }));
                 } catch (err) {
                   setError(err.message);
@@ -1032,7 +817,20 @@ export default function AdminDashboard() {
                         <button
                           className="auth-submit-btn"
                           disabled={busy}
-                          onClick={() => saveFloor(id)}
+                          onClick={() => {
+                            const payload = floorEditMap[id] || {};
+                            const body = {};
+                            if (payload.name != null) body.name = payload.name;
+                            if (payload.svgMap != null) body.svgMap = payload.svgMap;
+                            setBusy(true);
+                            api(`/api/admin/floors/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+                              .then(() => {
+                                setFloorEditMap(prev => { const p = { ...prev }; delete p[id]; return p; });
+                                return reload();
+                              })
+                              .catch(e => setError(e.message))
+                              .finally(() => setBusy(false));
+                          }}
                         >
                           Save
                         </button>
@@ -1069,9 +867,15 @@ export default function AdminDashboard() {
                             if (!file) return;
                             try {
                               setBusy(true);
-                              const text = (await readFileAsText(file)).trim();
-                              if (!/^<\s*svg[\s>]/i.test(text)) throw new Error('Selected file is not an SVG');
-                              setFloorEditField(id, { svgMap: text, __fileName: file.name, __error: null });
+                              const text = await new Promise((resolve, reject) => {
+                                const reader = new FileReader();
+                                reader.onload = () => resolve(String(reader.result || ''));
+                                reader.onerror = () => reject(new Error('Failed to read file'));
+                                reader.readAsText(file, 'utf-8');
+                              });
+                              const trimmed = text.trim();
+                              if (!/^\s*<\s*svg[\s>]/i.test(trimmed)) throw new Error('Selected file is not an SVG');
+                              setFloorEditField(id, { svgMap: trimmed, __fileName: file.name, __error: null });
                             } catch (err) {
                               setFloorEditField(id, { __error: err.message });
                             } finally {
@@ -1080,7 +884,7 @@ export default function AdminDashboard() {
                           }}
                         />
                         {editing.__fileName && <div className="ft-badge">Loaded: {editing.__fileName}</div>}
-                        {editing.__error && <div className="ft-badge" style={{ color: '#FCA5A5', borderColor: '#512; background:#200' }}>{editing.__error}</div>}
+                        {editing.__error && <div className="ft-badge" style={{ color: '#FCA5A5', borderColor: '#512', background: '#200' }}>{editing.__error}</div>}
                       </div>
                     </div>
                   </div>
@@ -1092,7 +896,7 @@ export default function AdminDashboard() {
                     </div>
                     <div className="ft-actions">
                       <button className="auth-submit-btn" disabled={busy} onClick={() => beginEditFloor(f)}>Edit</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => requestDelete('floors', id)}>Delete</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('floors', id)}>Delete</button>
                     </div>
                   </div>
                 )}
@@ -1158,7 +962,7 @@ export default function AdminDashboard() {
                     <div>{a.name} — Floor #{a.floorId} (#{a.id})</div>
                     <div className="ft-actions">
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditAP(prev => ({ ...prev, [a.id]: { name: a.name, cx: a.cx, cy: a.cy } }))}>Edit</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => requestDelete('aps', a.id)}>Delete</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('aps', a.id)}>Delete</button>
                     </div>
                   </>
                 )}
@@ -1222,7 +1026,7 @@ export default function AdminDashboard() {
                     <div>{d.mac} — AP #{d.apId} (#{d.id})</div>
                     <div className="ft-actions">
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditDevice(prev => ({ ...prev, [d.id]: { mac: d.mac, apId: d.apId } }))}>Edit</button>
-                      <button className="auth-submit-btn" disabled={busy} onClick={() => requestDelete('devices', d.id)}>Delete</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDelete('devices', d.id)}>Delete</button>
                     </div>
                   </>
                 )}
@@ -1232,13 +1036,136 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Groups */}
+      {tab === 'groups' && (
+        <div className="ft-panel">
+          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div className="ft-panel-title">Groups</div>
+              <div className="ft-panel-sub">Create, edit, or delete groups</div>
+            </div>
+            <SortBar
+              fields={[
+                { value: 'name', label: 'Name' },
+                { value: 'id', label: 'ID' },
+              ]}
+              value={sortGroups.field}
+              order={sortGroups.order}
+              onField={v => setSortGroups(s => ({ ...s, field: v }))}
+              onOrder={v => setSortGroups(s => ({ ...s, order: v }))}
+            />
+          </div>
+
+          {/* Create */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <input className="auth-input" placeholder="Group name" value={grpName} onChange={e => setGrpName(e.target.value)} />
+            <button className="auth-submit-btn" disabled={busy || !grpName} onClick={() => onCreateGroup(grpName)}>Add</button>
+          </div>
+
+          {/* List + edit */}
+          {groupsSorted.map(g => {
+            const editing = editGroup[g.id] || null;
+            return (
+              <div key={g.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                {editing ? (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
+                    <input className="auth-input" value={editing.name ?? g.name}
+                           onChange={e => setEditGroup(prev => ({ ...prev, [g.id]: { ...editing, name: e.target.value } }))} />
+                    <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => saveGroup(g.id)}>Save</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => setEditGroup(prev => { const p = { ...prev }; delete p[g.id]; return p; })}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>{g.name} (#{g.id})</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => setEditGroup(prev => ({ ...prev, [g.id]: { name: g.name } }))}>Edit</button>
+                      <button className="auth-submit-btn" disabled={busy} onClick={() => onDeleteGroup(g.id)}>Delete</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* GlobalPermissions */}
+      {tab === 'globalPermissions' && (
+        <div className="ft-panel">
+          <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div className="ft-panel-title">Global Permissions</div>
+              <div className="ft-panel-sub">Map a Group to Building and Floor</div>
+            </div>
+            <SortBar
+              fields={[
+                { value: 'groupName', label: 'Group name' },
+                { value: 'buildingName', label: 'Building name' },
+                { value: 'floorName', label: 'Floor name' },
+                { value: 'groupId', label: 'Group ID' },
+                { value: 'buildingId', label: 'Building ID' },
+                { value: 'floorId', label: 'Floor ID' },
+                { value: 'id', label: 'Record ID' },
+              ]}
+              value={sortGlobalPerms.field}
+              order={sortGlobalPerms.order}
+              onField={v => setSortGlobalPerms(s => ({ ...s, field: v }))}
+              onOrder={v => setSortGlobalPerms(s => ({ ...s, order: v }))}
+            />
+          </div>
+
+          {/* Create */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 12 }}>
+            <select className="auth-input" value={gpGroupId} onChange={e => setGpGroupId(e.target.value)}>
+              <option value="">Select group</option>
+              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+
+            <select className="auth-input" value={gpBuildingId} onChange={e => setGpBuildingId(e.target.value)}>
+              <option value="">Select building</option>
+              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+
+            <select className="auth-input" value={gpFloorId} onChange={e => setGpFloorId(e.target.value)}>
+              <option value="">Select floor</option>
+              {floors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+
+            <button
+              className="auth-submit-btn"
+              disabled={busy || !gpGroupId || !gpBuildingId || !gpFloorId}
+              onClick={() => onCreateGlobalPermission(gpGroupId, gpBuildingId, gpFloorId)}
+            >
+              Add
+            </button>
+          </div>
+
+          {/* List */}
+          {globalPermsSorted.map(rec => (
+            <div key={rec.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div className="ft-title-line">
+                  Group: {rec.groupName || `G#${rec.groupId}`} • Building: {rec.buildingName || `B#${rec.buildingId}`} • Floor: {rec.floorName || `F#${rec.floorId}`}
+                </div>
+                <div className="ft-legend-sub">Record #{rec.id}</div>
+              </div>
+              <div className="ft-actions">
+                <button className="auth-submit-btn" disabled={busy} onClick={() => onDeleteGlobalPermission(rec.id)}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Pending Users */}
       {tab === 'pendingUsers' && (
         <div className="ft-panel">
           <div className="ft-panel-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
             <div>
               <div className="ft-panel-title">Pending Users</div>
-              <div className="ft-panel-sub">Owners can assign role and group to new users</div>
+              <div className="ft-panel-sub">Owners can assign role and groups to new users</div>
             </div>
             <SortBar
               fields={[
@@ -1257,9 +1184,11 @@ export default function AdminDashboard() {
 
           {pendingSorted.map(u => {
             const cur = assignPending[u.id] || {};
+            const selectedGroupIds = cur.groupIds ?? [];
+
             return (
-              <div key={u.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'grid', gap: 4 }}>
+              <div key={u.id} className="ft-stat-card" style={{ alignItems: 'stretch', gap: 12 }}>
+                <div style={{ display: 'grid', gap: 4, flex: 1 }}>
                   <div className="ft-title-line">
                     {u.email} (#{u.id})
                   </div>
@@ -1268,62 +1197,88 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                <div className="ft-actions" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center', flex: 2 }}>
                   {/* Role dropdown */}
-                  <select
-                    className="auth-input"
-                    value={cur.roleId ?? ''}
-                    onChange={e => setAssignPending(prev => ({ ...prev, [u.id]: { ...cur, roleId: e.target.value } }))}
-                  >
-                    <option value="">Select role</option>
-                    {roles
-                      .filter(r => r.name !== 'Pending User') // prevent re-assigning pending
-                      .map(r => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <label className="ft-floor-label">Role</label>
+                    <select
+                      className="auth-input"
+                      value={cur.roleId ?? ''}
+                      onChange={e => setAssignPending(prev => ({ ...prev, [u.id]: { ...cur, roleId: e.target.value } }))}
+                    >
+                      <option value="">Select role</option>
+                      {roles
+                        .filter(r => r.name !== 'Pending User')
+                        .map(r => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {/* Groups multi-select */}
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <label className="ft-floor-label">Groups</label>
+                    <select
+                      multiple
+                      className="auth-input"
+                      value={selectedGroupIds}
+                      onChange={e => {
+                        const selected = Array.from(e.target.selectedOptions).map(o => o.value);
+                        setAssignPending(prev => ({ ...prev, [u.id]: { ...cur, groupIds: selected } }));
+                      }}
+                      style={{ minHeight: 140 }}
+                    >
+                      {groups.map(g => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
                       ))}
-                  </select>
+                    </select>
+                    <div className="ft-legend-sub" style={{ marginTop: 4 }}>
+                      Hold Ctrl (Windows) or Cmd (Mac) to select multiple items.
+                    </div>
 
-                  {/* Group dropdown */}
-                  <select
-                    className="auth-input"
-                    value={cur.groupId ?? ''}
-                    onChange={e => setAssignPending(prev => ({ ...prev, [u.id]: { ...cur, groupId: e.target.value } }))}
-                  >
-                    <option value="">Select group</option>
-                    {groups.map(g => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
+                    {/* Selected group badges */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                      {selectedGroupIds.length === 0 && (
+                        <span className="ft-legend-sub">No groups selected</span>
+                      )}
+                      {selectedGroupIds.map(id => {
+                        const g = groups.find(x => String(x.id) === String(id));
+                        return (
+                          <span key={id} className="ft-badge">
+                            {g?.name || `Group #${id}`}
+                          </span>
+                        );
+                      })}
+                    </div>
 
-                  <button
-                    className="auth-submit-btn"
-                    disabled={busy || !cur.roleId || !cur.groupId}
-                    onClick={() => assignUserRoleAndGroup(u.id)}
-                  >
-                    Assign
-                  </button>
+                    {/* Clear button */}
+                    <div style={{ marginTop: 6 }}>
+                      <button
+                        className="auth-submit-btn"
+                        disabled={busy || selectedGroupIds.length === 0}
+                        onClick={() => setAssignPending(prev => ({ ...prev, [u.id]: { ...cur, groupIds: [] } }))}
+                      >
+                        Clear selected groups
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Assign */}
+                  <div style={{ display: 'grid', alignContent: 'end' }}>
+                    <button
+                      className="auth-submit-btn"
+                      disabled={busy || !cur.roleId || selectedGroupIds.length === 0}
+                      onClick={() => assignUserRoleAndGroup(u.id)}
+                    >
+                      Assign
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
       )}
-
-
-      {/* Themed confirm modal */}
-      <ConfirmModal
-        open={!!confirmState}
-        title="Please confirm"
-        body={
-          confirmState
-            ? `Are you sure you want to delete this ${confirmState.kind.slice(0, -1)}?`
-            : ''
-        }
-        confirmText="Delete"
-        cancelText="Cancel"
-        onConfirm={performDelete}
-        onCancel={() => setConfirmState(null)}
-      />
     </div>
   );
 }
