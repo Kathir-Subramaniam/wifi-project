@@ -193,8 +193,8 @@ router.put("/api/admin/buildings/:id", verifyToken, async (req, res) => {
     const user = await getAppUser(req);
     const id = req.params.id;
     if (!user) return res.status(403).json({ error: "Unauthorized" });
-    if (!(await canManageBuilding(user, id)))
-      return res.status(403).json({ error: "Forbidden" });
+    if (user.role?.name !== "Owner")
+      return res.status(403).json({ error: "Only Owner can Edit Building" });
 
     const { name } = req.body;
     const b = await prisma.buildings.update({

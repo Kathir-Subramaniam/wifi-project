@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 // Role names expected in Roles.name
 const ROLES = {
   OWNER: 'Owner',
-  ORG_ADMIN: 'Organisation Admin',
+  ORG_ADMIN: 'Organization Admin',
   SITE_ADMIN: 'Site Admin',
 };
 
@@ -31,13 +31,13 @@ function hasRole(user, roleName) {
 // Given a user and target resource, decide permissions.
 // Rules:
 // - Owner: can manage everything.
-// - Organisation Admin: can edit all floors/AP/devices of groups they belong to. Use GlobalPermissions table to map groups to floors/buildings.
-// - Site Admin: can edit everything related to all floors of that organisation in one specific building (via GlobalPermissions group + building).
+// - Organization Admin: can edit all floors/AP/devices of groups they belong to. Use GlobalPermissions table to map groups to floors/buildings.
+// - Site Admin: can edit everything related to all floors of that organization in one specific building (via GlobalPermissions group + building).
 async function canManageBuilding(user, buildingId) {
   if (!user) return false;
   if (hasRole(user, ROLES.OWNER)) return true;
-
-  // Organisation Admin: any building having GlobalPermissions with group in user's groups
+  console.log(user, buildingId)
+  // Organization Admin: any building having GlobalPermissions with group in user's groups
   if (hasRole(user, ROLES.ORG_ADMIN)) {
     const groupIds = user.userGroups.map(ug => ug.groupId);
     if (groupIds.length === 0) return false;
@@ -45,6 +45,7 @@ async function canManageBuilding(user, buildingId) {
       where: { buildingId: BigInt(buildingId), groupId: { in: groupIds } },
       select: { id: true },
     });
+    console.log(gp)
     return !!gp;
   }
 
