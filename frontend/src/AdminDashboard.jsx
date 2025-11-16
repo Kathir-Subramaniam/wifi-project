@@ -52,6 +52,7 @@ function FilePicker({ onPick, label = 'Upload SVG', accept = '.svg,image/svg+xml
   );
 }
 
+
 // Sorting utils
 function by(getter, dir = 'asc') {
   return (a, b) => {
@@ -269,6 +270,7 @@ function UserMenu({ email, name, onLogout }) {
 export default function AdminDashboard() {
   const [tab, setTab] = useState('buildings');
 
+
   const [buildings, setBuildings] = useState([]);
   const [floors, setFloors] = useState([]);
   const [aps, setAps] = useState([]);
@@ -372,6 +374,23 @@ export default function AdminDashboard() {
   };
   const displayName = `${profile?.user?.firstName || ''} ${profile?.user?.lastName || ''}`.trim();
   const email = profile?.user?.email;
+
+  const roleName = profile?.user?.role?.name || '';
+  const isOwner = roleName === 'Owner';
+  const isSiteAdmin = roleName === 'Site Admin';
+
+  useEffect(() => {
+    // Always block these for non-owners
+    if (!isOwner && (tab === 'groups' || tab === 'pendingUsers')) {
+      setTab('buildings');
+      return;
+    }
+    // Block GlobalPermissions for Site Admin
+    if (isSiteAdmin && tab === 'globalPermissions') {
+      setTab('buildings');
+    }
+  }, [isOwner, isSiteAdmin, tab]);
+
 
   // Sorted lists
   const buildingsSorted = useMemo(() =>
@@ -485,31 +504,41 @@ export default function AdminDashboard() {
   const reload = async () => {
     setError(null);
     try {
-      const [b, f, a, d, g, gp, pu, rl] = await Promise.allSettled([
+      const canSeeGlobalPerms = isOwner || roleName === 'Organization Admin';
+
+      const calls = [
         api('/api/admin/buildings'),
         api('/api/admin/floors'),
         api('/api/admin/aps'),
         api('/api/admin/devices'),
-        api('/api/admin/groups'),
-        api('/api/admin/global-permissions'),
-        api('/api/admin/pending-users'),
+        isOwner ? api('/api/admin/groups') : Promise.resolve([]),
+        canSeeGlobalPerms ? api('/api/admin/global-permissions') : Promise.resolve([]),
+        isOwner ? api('/api/admin/pending-users') : Promise.resolve([]),
         api('/api/admin/roles'),
-      ]);
+      ];
+
+      const [b, f, a, d, g, gp, pu, rl] = await Promise.allSettled(calls);
 
       if (b.status === 'fulfilled') setBuildings(b.value);
       if (f.status === 'fulfilled') setFloors(f.value);
       if (a.status === 'fulfilled') setAps(a.value);
       if (d.status === 'fulfilled') setDevices(d.value);
-      if (g.status === 'fulfilled') setGroups(g.value);
-      if (gp.status === 'fulfilled') setGlobalPerms(gp.value);
-      if (pu.status === 'fulfilled') setPendingUsers(pu.value);
+      if (g.status === 'fulfilled') setGroups(g.value || []);
+      if (gp.status === 'fulfilled') setGlobalPerms(gp.value || []);
+      if (pu.status === 'fulfilled') setPendingUsers(pu.value || []);
       if (rl.status === 'fulfilled') setRoles(rl.value);
     } catch (e) {
       setError(e.message);
     }
   };
 
-  useEffect(() => { reload(); }, []);
+
+  // Reload whenever profile (and thus isOwner) is known
+  useEffect(() => {
+    if (profile) reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, isOwner]);
+
 
   // Create handlers
   const onCreateBuilding = async (name) => {
@@ -693,10 +722,14 @@ export default function AdminDashboard() {
         <TabButton id="floors" label="Floors" />
         <TabButton id="aps" label="APs" />
         <TabButton id="devices" label="Devices" />
-        <TabButton id="groups" label="Groups" />
-        <TabButton id="globalPermissions" label="GlobalPermissions" />
-        <TabButton id="pendingUsers" label="Pending Users" />
+        {isOwner && <TabButton id="groups" label="Groups" />}
+        {(isOwner || roleName === 'Organization Admin') && (
+          <TabButton id="globalPermissions" label="GlobalPermissions" />
+        )}
+        {isOwner && <TabButton id="pendingUsers" label="Pending Users" />}
       </div>
+
+
 
       {error && <div className="auth-alert auth-alert-error" style={{ marginBottom: 12 }}>{String(error)}</div>}
 
