@@ -76,29 +76,58 @@ router.delete("/api/admin/groups/:id", verifyToken, async (req, res) => {
 });
 
 // GlobalPermissions
-router.get("/api/admin/global-permissions", verifyToken, async (req, res) => {
+router.get('/api/admin/global-permissions', verifyToken, async (req, res) => {
   try {
-    const gps = await prisma.globalPermissions.findMany({
-      include: {
-        group: true,
-        building: true,
-        floor: true,
-      },
-      orderBy: { id: "asc" },
-    });
-    res.json(
-      gps.map((x) => ({
-        id: x.id.toString(),
-        groupId: x.groupId.toString(),
-        groupName: x.group?.name || null,
-        buildingId: x.buildingId.toString(),
-        buildingName: x.building?.name || null,
-        floorId: x.floorId.toString(),
-        floorName: x.floor?.name || null,
-      }))
-    );
+    const user = await getAppUser(req);
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const roleName = user?.role?.name || '';
+
+    // Owner: see everything
+    if (roleName === 'Owner') {
+      const rows = await prisma.globalPermissions.findMany({
+        include: { group: true, building: true, floor: true },
+        orderBy: { id: 'asc' },
+      });
+      return res.json(rows.map(rec => ({
+        id: String(rec.id),
+        groupId: String(rec.groupId),
+        buildingId: String(rec.buildingId),
+        floorId: String(rec.floorId),
+        groupName: rec.group?.name || null,
+        buildingName: rec.building?.name || null,
+        floorName: rec.floor?.name || null,
+      })));
+    }
+
+    // Org Admin: scope by their groups
+    if (roleName === 'Organization Admin') {
+      const myGroupIds = (user.userGroups || []).map(ug => ug.groupId);
+      if (myGroupIds.length === 0) {
+        return res.json([]); // nothing to show
+      }
+      const rows = await prisma.globalPermissions.findMany({
+        where: { groupId: { in: myGroupIds } },
+        include: { group: true, building: true, floor: true },
+        orderBy: { id: 'asc' },
+      });
+      return res.json(rows.map(rec => ({
+        id: String(rec.id),
+        groupId: String(rec.groupId),
+        buildingId: String(rec.buildingId),
+        floorId: String(rec.floorId),
+        groupName: rec.group?.name || null,
+        buildingName: rec.building?.name || null,
+        floorName: rec.floor?.name || null,
+      })));
+    }
+
+    // Others: forbidden
+    return res.status(403).json({ error: 'Forbidden' });
   } catch (e) {
-    res.status(500).json({ error: "Failed to list global permissions" });
+    console.error('GET /api/admin/global-permissions error:', e);
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -605,7 +634,7 @@ router.get("/api/profile", verifyToken, async (req, res) => {
         lastName: u.lastName,
         role: u.role ? { id: u.role.id.toString(), name: u.role.name } : null,
         // include more fields as needed, but keep it BigInt-safe:
-        // groups: u.userGroups?.map(g => ({ id: g.group.id.toString(), name: g.group.name })) ?? [],
+        groups: u.userGroups?.map(g => ({ id: g.group.id.toString(), name: g.group.name })) ?? [],
       },
     });
   } catch (e) {

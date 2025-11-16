@@ -378,6 +378,13 @@ export default function AdminDashboard() {
   const roleName = profile?.user?.role?.name || '';
   const isOwner = roleName === 'Owner';
   const isSiteAdmin = roleName === 'Site Admin';
+  const isOrgAdmin = roleName === 'Organization Admin';
+  const myGroupIds = useMemo(
+    () => (profile?.user?.groups || []).map(g => String(g.id)),
+    [profile]
+  );
+
+
 
   useEffect(() => {
     // Always block these for non-owners
@@ -391,6 +398,77 @@ export default function AdminDashboard() {
     }
   }, [isOwner, isSiteAdmin, tab]);
 
+
+  // Map helpers for quick inclusion checks
+  const gpForMyGroups = useMemo(() => {
+    if (!isOrgAdmin) return [];
+    return (globalPerms || []).filter(rec => myGroupIds.includes(String(rec.groupId)));
+  }, [globalPerms, isOrgAdmin, myGroupIds]);
+  const allowedBuildingIdsSet = useMemo(() => {
+    if (isOwner) return null; // null means "no filtering"
+    if (!isOrgAdmin) return new Set(); // site admin hidden; defensive
+    return new Set(gpForMyGroups.map(rec => String(rec.buildingId)));
+  }, [gpForMyGroups, isOwner, isOrgAdmin]);
+
+  const allowedFloorIdsSet = useMemo(() => {
+    if (isOwner) return null;
+    if (!isOrgAdmin) return new Set();
+    // floors whitelisted directly by GP
+    const directFloorIds = gpForMyGroups.map(rec => String(rec.floorId));
+    // also include floors under allowed buildings
+    const buildingScopedFloorIds = floors
+      .filter(f => allowedBuildingIdsSet.has(String(f.buildingId)))
+      .map(f => String(f.id));
+    return new Set([...directFloorIds, ...buildingScopedFloorIds]);
+  }, [gpForMyGroups, isOwner, isOrgAdmin, floors, allowedBuildingIdsSet]);
+
+  // Filtered lists for dropdowns
+  const groupsForDropdown = useMemo(() => {
+    if (isOwner) return groups;
+    if (isOrgAdmin) {
+      // Use the groups embedded in profile for Org Admin
+      return (profile?.user?.groups || []).map(g => ({ id: String(g.id), name: g.name }));
+    }
+    return []; // Site Admins don't see this tab
+  }, [isOwner, isOrgAdmin, profile, groups]);
+
+
+  const buildingsForDropdown = useMemo(() => {
+    if (isOwner) return buildings;
+    if (isOrgAdmin) {
+      return buildings.filter(b => allowedBuildingIdsSet.has(String(b.id)));
+    }
+    return [];
+  }, [isOwner, isOrgAdmin, buildings, allowedBuildingIdsSet]);
+
+  const floorsForDropdown = useMemo(() => {
+    if (isOwner) return floors;
+    if (isOrgAdmin) {
+      return floors.filter(f => allowedFloorIdsSet.has(String(f.id)));
+    }
+    return [];
+  }, [isOwner, isOrgAdmin, floors, allowedFloorIdsSet]);
+
+  const floorsShown = useMemo(() => {
+    if (!gpBuildingId) return floorsForDropdown;
+    return floorsForDropdown.filter(f => String(f.buildingId) === String(gpBuildingId));
+  }, [floorsForDropdown, gpBuildingId]);
+
+
+  useEffect(() => {
+    // Clear group if not in filtered list
+    if (gpGroupId && !groupsForDropdown.some(g => String(g.id) === String(gpGroupId))) {
+      setGpGroupId('');
+    }
+    // Clear building if not in filtered list
+    if (gpBuildingId && !buildingsForDropdown.some(b => String(b.id) === String(gpBuildingId))) {
+      setGpBuildingId('');
+    }
+    // Clear floor if not in filtered list
+    if (gpFloorId && !floorsForDropdown.some(f => String(f.id) === String(gpFloorId))) {
+      setGpFloorId('');
+    }
+  }, [groupsForDropdown, buildingsForDropdown, floorsForDropdown, gpGroupId, gpBuildingId, gpFloorId]);
 
   // Sorted lists
   const buildingsSorted = useMemo(() =>
@@ -484,6 +562,36 @@ export default function AdminDashboard() {
       by(x => Number(x.id), 'asc')
     ), [globalPerms, sortGlobalPerms]
   );
+
+  const globalPermsForDisplay = useMemo(() => {
+  if (isOwner) return globalPermsSorted;
+  if (isOrgAdmin) {
+    // show only entries for this admin’s groups
+    const allowedSet = new Set(myGroupIds);
+    const filtered = (globalPerms || []).filter(rec => allowedSet.has(String(rec.groupId)));
+    // reuse your sorter to keep UX consistent
+    return sortWith(
+      filtered,
+      ...(function () {
+        const f = sortGlobalPerms.field;
+        const ord = sortGlobalPerms.order;
+        if (f === 'groupName') return [by(x => x.groupName || '', ord)];
+        if (f === 'buildingName') return [by(x => x.buildingName || '', ord)];
+        if (f === 'floorName') return [by(x => x.floorName || '', ord)];
+        if (f === 'groupId') return [by(x => Number(x.groupId), ord)];
+        if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
+        if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
+        return [by(x => Number(x.id), ord)];
+      })(),
+      by(x => x.groupName || '', 'asc'),
+      by(x => x.buildingName || '', 'asc'),
+      by(x => x.floorName || '', 'asc'),
+      by(x => Number(x.id), 'asc')
+    );
+  }
+  return []; // Site Admin hidden; defensive
+}, [isOwner, isOrgAdmin, globalPerms, myGroupIds, globalPermsSorted, sortGlobalPerms]);
+
 
   const pendingSorted = useMemo(() =>
     sortWith(
@@ -1172,17 +1280,17 @@ export default function AdminDashboard() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 12 }}>
             <select className="auth-input" value={gpGroupId} onChange={e => setGpGroupId(e.target.value)}>
               <option value="">Select group</option>
-              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              {groupsForDropdown.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
 
             <select className="auth-input" value={gpBuildingId} onChange={e => setGpBuildingId(e.target.value)}>
               <option value="">Select building</option>
-              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {buildingsForDropdown.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
 
             <select className="auth-input" value={gpFloorId} onChange={e => setGpFloorId(e.target.value)}>
               <option value="">Select floor</option>
-              {floors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              {floorsShown.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
 
             <button
@@ -1195,7 +1303,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* List */}
-          {globalPermsSorted.map(rec => (
+          {globalPermsForDisplay.map(rec => (
             <div key={rec.id} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div className="ft-title-line">
