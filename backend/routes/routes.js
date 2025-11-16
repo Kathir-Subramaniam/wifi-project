@@ -325,12 +325,38 @@ router.post("/api/admin/floors", verifyToken, async (req, res) => {
       return res.status(403).json({ error: "Site Admins cannot create floors" });
     }
 
+    // Helper: pick a groupId to grant. Prefer the first group the user belongs to.
+    const firstGroupId = (user.userGroups || [])[0]?.groupId;
+    // If you want to require a group for automatic GP, you can enforce it:
+    // if (!firstGroupId) return res.status(400).json({ error: "User must belong to a group to create floors" });
+
     // Owner: can always create
     if (role === "Owner") {
-      const f = await prisma.floors.create({
-        data: { name, svgMap, buildingId: toBi(buildingId) },
+      const result = await prisma.$transaction(async (tx) => {
+        const floor = await tx.floors.create({
+          data: { name, svgMap, buildingId: toBi(buildingId) },
+        });
+
+        // If the owner has at least one group, add a GP row automatically
+        if (firstGroupId) {
+          await tx.globalPermissions.create({
+            data: {
+              groupId: firstGroupId,
+              buildingId: toBi(buildingId),
+              floorId: floor.id,
+            },
+          });
+        }
+
+        return floor;
       });
-      return res.json({ id: f.id.toString(), name: f.name, buildingId: f.buildingId.toString() });
+
+      return res.json({
+        id: result.id.toString(),
+        name: result.name,
+        buildingId: result.buildingId.toString(),
+        // optionally include grantedGroupId: firstGroupId?.toString() ?? null
+      });
     }
 
     // Org Admin: create only if they can manage the target building
@@ -338,10 +364,31 @@ router.post("/api/admin/floors", verifyToken, async (req, res) => {
       const ok = await canManageBuilding(user, buildingId);
       if (!ok) return res.status(403).json({ error: "Forbidden for building" });
 
-      const f = await prisma.floors.create({
-        data: { name, svgMap, buildingId: toBi(buildingId) },
+      const result = await prisma.$transaction(async (tx) => {
+        const floor = await tx.floors.create({
+          data: { name, svgMap, buildingId: toBi(buildingId) },
+        });
+
+        // Require a group to grant. If none, we skip GP creation but still return the floor.
+        if (firstGroupId) {
+          await tx.globalPermissions.create({
+            data: {
+              groupId: firstGroupId,
+              buildingId: toBi(buildingId),
+              floorId: floor.id,
+            },
+          });
+        }
+
+        return floor;
       });
-      return res.json({ id: f.id.toString(), name: f.name, buildingId: f.buildingId.toString() });
+
+      return res.json({
+        id: result.id.toString(),
+        name: result.name,
+        buildingId: result.buildingId.toString(),
+        // optionally include grantedGroupId: firstGroupId?.toString() ?? null
+      });
     }
 
     // Everyone else forbidden
@@ -351,6 +398,7 @@ router.post("/api/admin/floors", verifyToken, async (req, res) => {
     res.status(500).json({ error: "Failed to create floor" });
   }
 });
+
 
 
 // routes.js (PUT /api/admin/floors/:id)
