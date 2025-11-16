@@ -612,9 +612,28 @@ export default function AdminDashboard() {
     if (!payload) return;
     setBusy(true); setError(null);
     try {
-      throw new Error('Device edit is not enabled yet. Please implement PUT /api/admin/devices/:id');
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+      const body = {};
+      if (payload.mac != null) body.mac = payload.mac;
+      if (payload.apId != null) body.apId = String(payload.apId); // backend expects an id; String ok
+
+      if (Object.keys(body).length === 0) {
+        throw new Error('No changes to save');
+      }
+
+      await api(`/api/admin/devices/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+
+      setEditDevice(prev => { const p = { ...prev }; delete p[id]; return p; });
+      await reload();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   };
+
   const saveGroup = async (id) => {
     const payload = editGroup[id];
     if (!payload) return;
@@ -1070,7 +1089,7 @@ export default function AdminDashboard() {
                 {editing ? (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
                     <input className="auth-input" value={editing.name ?? g.name}
-                           onChange={e => setEditGroup(prev => ({ ...prev, [g.id]: { ...editing, name: e.target.value } }))} />
+                      onChange={e => setEditGroup(prev => ({ ...prev, [g.id]: { ...editing, name: e.target.value } }))} />
                     <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => saveGroup(g.id)}>Save</button>
                       <button className="auth-submit-btn" disabled={busy} onClick={() => setEditGroup(prev => { const p = { ...prev }; delete p[g.id]; return p; })}>Cancel</button>

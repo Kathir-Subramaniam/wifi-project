@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 const firebaseAuthController = require("../controllers/firebase-auth-controller");
 const verifyToken = require("../middleware");
 const PostsController = require("../controllers/posts-controller.js");
-const { admin } = require('../config/firebase');
+const { admin } = require("../config/firebase");
 const {
   getAppUser,
   canManageBuilding,
@@ -492,6 +492,75 @@ router.post("/api/admin/devices", verifyToken, async (req, res) => {
   }
 });
 
+router.put("/api/admin/devices/:id", verifyToken, async (req, res) => {
+  try {
+    const user = await getAppUser(req);
+    if (!user) return res.status(403).json({ error: "Unauthorized" });
+
+    const id = req.params.id;
+    const toBi = (v) => {
+      const s = String(v);
+      if (!/^\d+$/.test(s)) throw new Error(`Invalid ID: ${s}`);
+      return BigInt(s);
+    };
+
+    // Load existing device with its floor to check permissions
+    const existing = await prisma.clients.findUnique({
+      where: { id: toBi(id) },
+      include: { ap: { select: { id: true, floorId: true } } },
+    });
+    if (!existing) return res.status(404).json({ error: "Device not found" });
+
+    if (!(await canManageFloor(user, existing.ap.floorId))) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const { mac, apId } = req.body;
+    const data = {};
+
+    if (mac != null) {
+      data.mac = mac;
+    }
+
+    if (apId != null) {
+      const targetAp = await prisma.aPs.findUnique({
+        where: { id: toBi(apId) },
+        select: { id: true, floorId: true },
+      });
+      if (!targetAp) return res.status(404).json({ error: "AP not found" });
+
+      if (!(await canManageFloor(user, targetAp.floorId))) {
+        return res.status(403).json({ error: "Forbidden for target floor" });
+      }
+
+      data.apId = toBi(apId);
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" });
+    }
+
+    const updated = await prisma.clients.update({
+      where: { id: toBi(id) },
+      data,
+      include: { ap: { select: { floorId: true } } },
+    });
+
+    res.json({
+      id: updated.id.toString(),
+      mac: updated.mac,
+      apId: updated.apId.toString(),
+      floorId: updated.ap?.floorId?.toString?.() ?? undefined,
+    });
+  } catch (e) {
+    console.error("PUT /api/admin/devices/:id failed", e);
+    const msg = /Unique|unique/i.test(e.message)
+      ? "MAC already exists"
+      : "Failed to update device";
+    res.status(400).json({ error: msg });
+  }
+});
+
 router.delete("/api/admin/devices/:id", verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
@@ -686,84 +755,101 @@ router.delete("/api/profile/devices/:id", verifyToken, async (req, res) => {
 });
 
 // List roles for dropdown
-router.get('/api/admin/roles', verifyToken, async (req, res) => {
+router.get("/api/admin/roles", verifyToken, async (req, res) => {
   try {
-    const roles = await prisma.roles.findMany({ orderBy: { id: 'asc' } });
-    res.json(roles.map(r => ({ id: r.id.toString(), name: r.name })));
+    const roles = await prisma.roles.findMany({ orderBy: { id: "asc" } });
+    res.json(roles.map((r) => ({ id: r.id.toString(), name: r.name })));
   } catch (e) {
-    res.status(500).json({ error: 'Failed to list roles' });
+    res.status(500).json({ error: "Failed to list roles" });
   }
 });
 
 // List pending users (role = "Pending User")
-router.get('/api/admin/pending-users', verifyToken, async (req, res) => {
+router.get("/api/admin/pending-users", verifyToken, async (req, res) => {
   try {
     // Authorization: Allow only Owner
     const me = await prisma.users.findUnique({
       where: { firebaseUid: req.user.uid },
       include: { role: true },
     });
-    if (!me || me.role?.name !== 'Owner') return res.status(403).json({ error: 'Forbidden' });
+    if (!me || me.role?.name !== "Owner")
+      return res.status(403).json({ error: "Forbidden" });
 
-    const pendingRole = await prisma.roles.findFirst({ where: { name: 'Pending User' } });
+    const pendingRole = await prisma.roles.findFirst({
+      where: { name: "Pending User" },
+    });
     if (!pendingRole) return res.json([]);
 
     const users = await prisma.users.findMany({
       where: { roleId: pendingRole.id },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: "asc" },
       select: { id: true, email: true, createdAt: true },
     });
-    res.json(users.map(u => ({ id: u.id.toString(), email: u.email, createdAt: u.createdAt })));
+    res.json(
+      users.map((u) => ({
+        id: u.id.toString(),
+        email: u.email,
+        createdAt: u.createdAt,
+      }))
+    );
   } catch (e) {
-    res.status(500).json({ error: 'Failed to list pending users' });
+    res.status(500).json({ error: "Failed to list pending users" });
   }
 });
 
 // Assign role + group to a pending user
 // REPLACE-ALL: assign role and replace groups set with groupIds[]
-router.post('/api/admin/pending-users/:id/assign', verifyToken, async (req, res) => {
-  try {
-    // const owner = await ensureOwner(req, prisma);
-    // if (!owner) return res.status(403).json({ error: 'Forbidden' });
+router.post(
+  "/api/admin/pending-users/:id/assign",
+  verifyToken,
+  async (req, res) => {
+    try {
+      // const owner = await ensureOwner(req, prisma);
+      // if (!owner) return res.status(403).json({ error: 'Forbidden' });
 
-    const userId = toBi(req.params.id);
-    const { roleId, groupIds } = req.body || {};
+      const userId = toBi(req.params.id);
+      const { roleId, groupIds } = req.body || {};
 
-    if (!roleId || !Array.isArray(groupIds) || groupIds.length === 0) {
-      return res.status(400).json({ error: 'roleId and groupIds[] are required' });
+      if (!roleId || !Array.isArray(groupIds) || groupIds.length === 0) {
+        return res
+          .status(400)
+          .json({ error: "roleId and groupIds[] are required" });
+      }
+
+      // Validate user
+      const user = await prisma.users.findUnique({ where: { id: userId } });
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      // Assign role
+      await prisma.users.update({
+        where: { id: userId },
+        data: { roleId: toBi(roleId) },
+      });
+
+      // Replace group memberships
+      await prisma.$transaction([
+        prisma.userGroups.deleteMany({ where: { userId } }),
+        prisma.userGroups.createMany({
+          data: groupIds.map((gid) => ({ userId, groupId: toBi(gid) })),
+          skipDuplicates: true, // Prisma 4.4+ supports this
+        }),
+      ]);
+
+      res.json({ ok: true });
+    } catch (e) {
+      console.error(
+        "POST /api/admin/pending-users/:id/assign replace-all failed",
+        e
+      );
+      res.status(400).json({ error: "Failed to assign" });
     }
-
-    // Validate user
-    const user = await prisma.users.findUnique({ where: { id: userId } });
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    // Assign role
-    await prisma.users.update({
-      where: { id: userId },
-      data: { roleId: toBi(roleId) },
-    });
-
-    // Replace group memberships
-    await prisma.$transaction([
-      prisma.userGroups.deleteMany({ where: { userId } }),
-      prisma.userGroups.createMany({
-        data: groupIds.map(gid => ({ userId, groupId: toBi(gid) })),
-        skipDuplicates: true, // Prisma 4.4+ supports this
-      }),
-    ]);
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('POST /api/admin/pending-users/:id/assign replace-all failed', e);
-    res.status(400).json({ error: 'Failed to assign' });
   }
-});
+);
 
-
-router.delete('/api/profile', verifyToken, async (req, res) => {
+router.delete("/api/profile", verifyToken, async (req, res) => {
   const firebaseUid = req.user?.uid;
   if (!firebaseUid) {
-    return res.status(403).json({ error: 'Unauthorized' });
+    return res.status(403).json({ error: "Unauthorized" });
   }
 
   try {
@@ -774,8 +860,10 @@ router.delete('/api/profile', verifyToken, async (req, res) => {
     });
     if (!user) {
       // If app user not found, still attempt to delete Firebase user
-      try { await admin.auth().deleteUser(firebaseUid); } catch {}
-      res.clearCookie('access_token');
+      try {
+        await admin.auth().deleteUser(firebaseUid);
+      } catch {}
+      res.clearCookie("access_token");
       return res.json({ ok: true });
     }
 
@@ -797,11 +885,11 @@ router.delete('/api/profile', verifyToken, async (req, res) => {
     await admin.auth().deleteUser(firebaseUid);
 
     // Clear session cookie
-    res.clearCookie('access_token');
+    res.clearCookie("access_token");
     return res.json({ ok: true });
   } catch (e) {
-    console.error('Delete profile failed', e);
-    return res.status(500).json({ error: 'Failed to delete account' });
+    console.error("Delete profile failed", e);
+    return res.status(500).json({ error: "Failed to delete account" });
   }
 });
 
