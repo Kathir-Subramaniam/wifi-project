@@ -75,9 +75,40 @@ app.get("/api/me", verifyToken, async (req, res) => {
 /**
  * Floor details: svgMap (protected)
  */
+// server.js
+// Floor details: svgMap (protected) — STRICT floor-only
 app.get("/api/floors/:floorId", verifyToken, async (req, res) => {
   try {
+    const toBi = (v) => {
+      const s = String(v);
+      if (!/^\d+$/.test(s)) throw new Error(`Invalid ID: ${s}`);
+      return BigInt(s);
+    };
+
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      include: { role: true, userGroups: true },
+    });
+    if (!user) return res.status(403).json({ error: "Unauthorized" });
+
     const floorId = toBi(req.params.floorId);
+
+    // Owner bypass; non-Owner must have direct floor-level GP
+    if (user.role?.name !== "Owner") {
+      const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
+      if (groupIds.length === 0) return res.status(403).json({ error: "Forbidden" });
+
+      const allowed = await prisma.globalPermissions.findFirst({
+        where: {
+          floorId,                  // STRICT floor-only
+          groupId: { in: groupIds },
+        },
+        select: { id: true },
+      });
+
+      if (!allowed) return res.status(403).json({ error: "Forbidden" });
+    }
+
     const floor = await prisma.floors.findUnique({
       where: { id: floorId },
       select: { id: true, name: true, svgMap: true },
@@ -95,17 +126,46 @@ app.get("/api/floors/:floorId", verifyToken, async (req, res) => {
   }
 });
 
-// Floors list (protected)
+// Floors list (protected) — STRICT floor-only
 app.get("/api/floors", verifyToken, async (req, res) => {
   try {
-    const floors = await prisma.floors.findMany({
-      select: {
-        id: true,
-        name: true,
-        building: { select: { id: true, name: true } },
-      },
-      orderBy: { id: "asc" },
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      include: { role: true, userGroups: true },
     });
+    if (!user) return res.status(403).json({ error: "Unauthorized" });
+
+    const role = user.role?.name || '';
+    let floors = [];
+
+    if (role === "Owner") {
+      floors = await prisma.floors.findMany({
+        select: {
+          id: true,
+          name: true,
+          building: { select: { id: true, name: true } },
+        },
+        orderBy: { id: "asc" },
+      });
+    } else if (role === "Organization Admin" || role === "Site Admin") {
+      const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
+      if (groupIds.length === 0) return res.json([]);
+
+      floors = await prisma.floors.findMany({
+        where: {
+          // STRICT floor-only: must have direct GP for this floor
+          globalPermissions: { some: { groupId: { in: groupIds } } },
+        },
+        select: {
+          id: true,
+          name: true,
+          building: { select: { id: true, name: true } },
+        },
+        orderBy: { id: "asc" },
+      });
+    } else {
+      return res.json([]);
+    }
 
     const payload = floors.map((f) => ({
       id: f.id.toString(),
@@ -121,10 +181,39 @@ app.get("/api/floors", verifyToken, async (req, res) => {
   }
 });
 
-// Floor’s building (protected)
+// Floor’s building (protected) — STRICT floor-only
 app.get("/api/floors/:floorId/building", verifyToken, async (req, res) => {
   try {
+    const toBi = (v) => {
+      const s = String(v);
+      if (!/^\d+$/.test(s)) throw new Error(`Invalid ID: ${s}`);
+      return BigInt(s);
+    };
+
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      include: { role: true, userGroups: true },
+    });
+    if (!user) return res.status(403).json({ error: "Unauthorized" });
+
     const floorId = toBi(req.params.floorId);
+
+    // Owner bypass; non-Owner must have direct floor-level GP
+    if (user.role?.name !== "Owner") {
+      const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
+      if (groupIds.length === 0) return res.status(403).json({ error: "Forbidden" });
+
+      const allowed = await prisma.globalPermissions.findFirst({
+        where: {
+          floorId,                  // STRICT floor-only
+          groupId: { in: groupIds },
+        },
+        select: { id: true },
+      });
+
+      if (!allowed) return res.status(403).json({ error: "Forbidden" });
+    }
+
     const floor = await prisma.floors.findUnique({
       where: { id: floorId },
       select: {
@@ -146,9 +235,12 @@ app.get("/api/floors/:floorId/building", verifyToken, async (req, res) => {
   }
 });
 
+
+
 /**
  * Devices by AP for a floor (protected)
  */
+// Stats: devices-by-ap for a specific floor (protected, STRICT floor-only)
 app.get("/api/stats/devices-by-ap", verifyToken, async (req, res) => {
   try {
     const floorIdParam = req.query.floorId;
@@ -157,6 +249,30 @@ app.get("/api/stats/devices-by-ap", verifyToken, async (req, res) => {
     }
     const floorId = toBi(floorIdParam);
 
+    // Load user and groups
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      include: { role: true, userGroups: true },
+    });
+    if (!user) return res.status(403).json({ error: "Unauthorized" });
+
+    // Owner bypass; non-Owner must have direct floor-level GP
+    if (user.role?.name !== "Owner") {
+      const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
+      if (groupIds.length === 0) return res.status(403).json({ error: "Forbidden" });
+
+      const allowed = await prisma.globalPermissions.findFirst({
+        where: {
+          floorId,                  // STRICT floor-only
+          groupId: { in: groupIds },
+        },
+        select: { id: true },
+      });
+
+      if (!allowed) return res.status(403).json({ error: "Forbidden" });
+    }
+
+    // Only query APs on this floor
     const aps = await prisma.aPs.findMany({
       where: { floorId },
       select: {
@@ -164,7 +280,7 @@ app.get("/api/stats/devices-by-ap", verifyToken, async (req, res) => {
         name: true,
         cx: true,
         cy: true,
-        _count: { select: { client: true } },
+        _count: { select: { client: true } }, // number of devices per AP
       },
       orderBy: { id: "asc" },
     });
@@ -184,28 +300,98 @@ app.get("/api/stats/devices-by-ap", verifyToken, async (req, res) => {
   }
 });
 
+
 /**
  * Totals (protected)
  */
+// Totals: devices on a specific floor (protected, STRICT floor-only)
+// GET /api/stats/total-devices?floorId=123
 app.get("/api/stats/total-devices", verifyToken, async (req, res) => {
   try {
-    const totalDevices = await prisma.clients.count();
-    res.json({ totalDevices });
+    const floorIdParam = req.query.floorId;
+    if (!floorIdParam) {
+      return res.status(400).json({ error: "floorId query param is required" });
+    }
+    const floorId = toBi(floorIdParam);
+
+    // Load user
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      include: { role: true, userGroups: true },
+    });
+    if (!user) return res.status(403).json({ error: "Unauthorized" });
+
+    // Owner bypass; non-Owner must have direct floor-level GP
+    if (user.role?.name !== "Owner") {
+      const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
+      if (groupIds.length === 0) return res.status(403).json({ error: "Forbidden" });
+
+      const allowed = await prisma.globalPermissions.findFirst({
+        where: {
+          floorId, // STRICT floor-only
+          groupId: { in: groupIds },
+        },
+        select: { id: true },
+      });
+      if (!allowed) return res.status(403).json({ error: "Forbidden" });
+    }
+
+    // Count devices where their AP is on this floor
+    const totalDevices = await prisma.clients.count({
+      where: { ap: { floorId } },
+    });
+
+    res.json({ floorId: floorId.toString(), totalDevices });
   } catch (error) {
     console.error("Error fetching device count", error);
     res.status(500).json({ error: "Failed to fetch devices" });
   }
 });
 
+// Totals: APs on a specific floor (protected, STRICT floor-only)
+// GET /api/stats/total-aps?floorId=123
 app.get("/api/stats/total-aps", verifyToken, async (req, res) => {
   try {
-    const totalAps = await prisma.aPs.count();
-    res.json({ totalAps });
+    const floorIdParam = req.query.floorId;
+    if (!floorIdParam) {
+      return res.status(400).json({ error: "floorId query param is required" });
+    }
+    const floorId = toBi(floorIdParam);
+
+    // Load user
+    const user = await prisma.users.findUnique({
+      where: { firebaseUid: req.user.uid },
+      include: { role: true, userGroups: true },
+    });
+    if (!user) return res.status(403).json({ error: "Unauthorized" });
+
+    // Owner bypass; non-Owner must have direct floor-level GP
+    if (user.role?.name !== "Owner") {
+      const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
+      if (groupIds.length === 0) return res.status(403).json({ error: "Forbidden" });
+
+      const allowed = await prisma.globalPermissions.findFirst({
+        where: {
+          floorId, // STRICT floor-only
+          groupId: { in: groupIds },
+        },
+        select: { id: true },
+      });
+      if (!allowed) return res.status(403).json({ error: "Forbidden" });
+    }
+
+    // Count APs on this floor
+    const totalAps = await prisma.aPs.count({
+      where: { floorId },
+    });
+
+    res.json({ floorId: floorId.toString(), totalAps });
   } catch (error) {
     console.error("Error fetching AP count", error);
     res.status(500).json({ error: "Failed to fetch APs" });
   }
 });
+
 
 /**
  * Create a client device record (attach to an AP) — protected

@@ -11,8 +11,7 @@ const ROLES = {
 
 // Load the app user and role based on Firebase UID carried in req.user (set by verifyToken)
 async function getAppUser(req) {
-  // req.user.uid is from Firebase Admin verification
-  const firebaseUid = req.user?.uid;
+  const firebaseUid = req.user?.uid; // set by verifyToken (Firebase Admin)
   if (!firebaseUid) return null;
   return prisma.users.findUnique({
     where: { firebaseUid },
@@ -28,76 +27,75 @@ function hasRole(user, roleName) {
   return user?.role?.name === roleName;
 }
 
-// Given a user and target resource, decide permissions.
-// Rules:
-// - Owner: can manage everything.
-// - Organization Admin: can edit all floors/AP/devices of groups they belong to. Use GlobalPermissions table to map groups to floors/buildings.
-// - Site Admin: can edit everything related to all floors of that organization in one specific building (via GlobalPermissions group + building).
+/**
+ * Building-level manage check
+ * - Owner: can manage all buildings
+ * - Org Admin: can manage buildings explicitly granted via GlobalPermissions (by their groups)
+ * - Site Admin: same building-level rule (requires explicit building GP)
+ */
 async function canManageBuilding(user, buildingId) {
   if (!user) return false;
   if (hasRole(user, ROLES.OWNER)) return true;
-  console.log(user, buildingId)
-  // Organization Admin: any building having GlobalPermissions with group in user's groups
-  if (hasRole(user, ROLES.ORG_ADMIN)) {
-    const groupIds = user.userGroups.map(ug => ug.groupId);
-    if (groupIds.length === 0) return false;
+
+  const biBuildingId = BigInt(String(buildingId));
+  const groupIds = (user.userGroups || []).map(ug => ug.groupId);
+  if (groupIds.length === 0) return false;
+
+  if (hasRole(user, ROLES.ORG_ADMIN) || hasRole(user, ROLES.SITE_ADMIN)) {
     const gp = await prisma.globalPermissions.findFirst({
-      where: { buildingId: BigInt(buildingId), groupId: { in: groupIds } },
+      where: { buildingId: biBuildingId, groupId: { in: groupIds } },
       select: { id: true },
     });
-    console.log(gp)
     return !!gp;
   }
 
-  // Site Admin: must have a GlobalPermissions linking their group AND the specific building
-  if (hasRole(user, ROLES.SITE_ADMIN)) {
-    const groupIds = user.userGroups.map(ug => ug.groupId);
-    if (groupIds.length === 0) return false;
-    const gp = await prisma.globalPermissions.findFirst({
-      where: { buildingId: BigInt(buildingId), groupId: { in: groupIds } },
-      select: { id: true },
-    });
-    return !!gp;
-  }
   return false;
 }
 
+/**
+ * Floor-level manage check (STRICT floor-only for Org Admin)
+ * - Owner: can manage all floors
+ * - Org Admin: can manage a floor only if there is a direct GlobalPermissions entry for that floorId (no building inheritance)
+ * - Site Admin: (current behavior) may manage floors if their groups have building-level GP; change to strict floor-only if desired
+ */
 async function canManageFloor(user, floorId) {
   if (!user) return false;
   if (hasRole(user, ROLES.OWNER)) return true;
 
   const floor = await prisma.floors.findUnique({
-    where: { id: BigInt(floorId) },
+    where: { id: BigInt(String(floorId)) },
     select: { id: true, buildingId: true },
   });
   if (!floor) return false;
 
-  // ORG_ADMIN: floor is manageable if any GlobalPermissions entry ties user's groups to the same floor OR building
+  const groupIds = (user.userGroups || []).map(ug => ug.groupId);
+  if (groupIds.length === 0) return false;
+
+  // Org Admin: STRICT floor-only (must have direct GP for this floor)
   if (hasRole(user, ROLES.ORG_ADMIN)) {
-    const groupIds = user.userGroups.map(ug => ug.groupId);
-    if (groupIds.length === 0) return false;
     const gp = await prisma.globalPermissions.findFirst({
       where: {
-        OR: [
-          { floorId: floor.id, groupId: { in: groupIds } },
-          { buildingId: floor.buildingId, groupId: { in: groupIds } },
-        ],
+        floorId: floor.id,         // only direct floor grants
+        groupId: { in: groupIds },
       },
       select: { id: true },
     });
     return !!gp;
   }
 
-  // SITE_ADMIN: can manage floors only if GP matches their group AND the building of that floor
+  // Site Admin: current rule uses building-level GP
+  // To make Site Admin also strict floor-only, replace buildingId check with floorId (like Org Admin above).
   if (hasRole(user, ROLES.SITE_ADMIN)) {
-    const groupIds = user.userGroups.map(ug => ug.groupId);
-    if (groupIds.length === 0) return false;
     const gp = await prisma.globalPermissions.findFirst({
-      where: { buildingId: floor.buildingId, groupId: { in: groupIds } },
+      where: {
+        buildingId: floor.buildingId, // current behavior: via building GP
+        groupId: { in: groupIds },
+      },
       select: { id: true },
     });
     return !!gp;
   }
+
   return false;
 }
 

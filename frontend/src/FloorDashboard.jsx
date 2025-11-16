@@ -112,10 +112,11 @@ export default function FloorDashboard() {
         // ]);
 
         const creds = { credentials: 'include', headers: { 'Content-Type': 'application/json' } };
+        const query = `floorId=${floorId}`;
         const [devicesRes, apsRes, apsCountRes, floorRes, buildingRes] = await Promise.all([
-          fetch(`${API_BASE}/api/stats/total-devices`, creds),
-          fetch(`${API_BASE}/api/stats/total-aps`, creds),
-          fetch(`${API_BASE}/api/stats/devices-by-ap?floorId=${floorId}`, creds),
+          fetch(`${API_BASE}/api/stats/total-devices?${query}`, creds),
+          fetch(`${API_BASE}/api/stats/total-aps?${query}`, creds),
+          fetch(`${API_BASE}/api/stats/devices-by-ap?${query}`, creds),
           fetch(`${API_BASE}/api/floors/${floorId}`, creds),
           fetch(`${API_BASE}/api/floors/${floorId}/building`, creds),
         ]);
