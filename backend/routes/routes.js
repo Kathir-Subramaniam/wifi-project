@@ -10,6 +10,7 @@ const PostsController = require('../controllers/posts-controller.js');
 const { admin } = require('../config/firebase');
 const { getAppUser, canManageBuilding, canManageFloor } = require('../controllers/rbac');
 const logger = require('../utils/logger');
+const { authLimiter, resetPasswordLimiter, adminLimiter } = require('../utils/rateLimiters');
 
 // Helpers
 const toBi = (v) => {
@@ -19,11 +20,11 @@ const toBi = (v) => {
 };
 
 // Auth routes
-router.post('/api/register', (req, res) => {
+router.post('/api/register', authLimiter, (req, res) => {
   logger.info({ email: req.body?.email }, 'Register requested');
   return firebaseAuthController.registerUser(req, res);
 });
-router.post('/api/login', (req, res) => {
+router.post('/api/login', authLimiter, (req, res) => {
   logger.info({ email: req.body?.email }, 'Login requested');
   return firebaseAuthController.loginUser(req, res);
 });
@@ -31,21 +32,12 @@ router.post('/api/logout', (req, res) => {
   logger.info({ uid: req.user?.uid }, 'Logout requested');
   return firebaseAuthController.logoutUser(req, res);
 });
-router.post('/api/reset-password', (req, res) => {
+router.post('/api/reset-password', resetPasswordLimiter, (req, res) => {
   logger.info({ email: req.body?.email }, 'Password reset requested');
   return firebaseAuthController.resetPassword(req, res);
 });
 
-// Example protected posts
-router.get('/api/posts', verifyToken, async (req, res) => {
-  try {
-    logger.debug({ uid: req.user?.uid }, 'List posts requested');
-    return PostsController.getPosts(req, res);
-  } catch (e) {
-    logger.error({ err: e, uid: req.user?.uid }, 'Get posts failed');
-    res.status(500).json({ error: 'Failed to get posts' });
-  }
-});
+router.use('/api/admin', adminLimiter);
 
 // Groups
 router.get('/api/admin/groups', verifyToken, async (req, res) => {
