@@ -227,6 +227,7 @@ export default function FloorDashboard() {
           canSeeAdmin={canSeeAdmin}
           email={profile?.user?.email}
           name={displayName}
+          currentPath="/home"
         />
       </div>
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import './FloorDashboard.css';
 import './AuthPage.css';
 import logo from './assets/logo.png';
+import UserMenu from './components/UserMenu';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
 
@@ -165,6 +166,8 @@ export default function ProfilePage() {
 
   const u = me?.user;
   const roleName = u?.role?.name || 'User';
+  const canSeeAdmin = roleName === 'Owner' || roleName === 'Organization Admin' || roleName === 'Site Admin';
+  const displayName = `${u?.firstName || ''} ${u?.lastName || ''}`.trim();
 
   return (
     <div className="ft-root">
@@ -176,10 +179,15 @@ export default function ProfilePage() {
           </a>
           <div className="ft-brand-text">Profile</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <a className="ft-live-btn" href="/home">Dashboard</a>
-          <a className="ft-live-btn" href="/admin">Admin</a>
-        </div>
+        <UserMenu
+          onLogout={async () => {
+            try { await api('/api/logout', { method: 'POST' }); window.location.href = '/'; } catch { }
+          }}
+          canSeeAdmin={canSeeAdmin}
+          email={u?.email}
+          name={displayName}
+          currentPath="/profile"
+        />
       </div>
 
       {error && <div className="auth-alert auth-alert-error" style={{ marginBottom: 12 }}>{String(error)}</div>}

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './FloorDashboard.css';
 import logo from './assets/logo.png';
+import UserMenu from './components/UserMenu';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
 
@@ -191,78 +192,6 @@ function SortBar({ fields, value, order, onField, onOrder }) {
         order={order}
         onChange={handleChange}
       />
-    </div>
-  );
-}
-
-// Minimal User Menu (Profile, Floor Dashboard, Logout)
-function UserMenu({ email, name, onLogout }) {
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef(null);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    const onDocClick = (e) => {
-      if (!open) return;
-      if (
-        menuRef.current && !menuRef.current.contains(e.target) &&
-        btnRef.current && !btnRef.current.contains(e.target)
-      ) setOpen(false);
-    };
-    const onEsc = (e) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onEsc);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onEsc);
-    };
-  }, [open]);
-
-  const displayName = (name && name.trim()) || (email ? email.split('@')[0] : 'User');
-  const initials = displayName.slice(0, 2).toUpperCase();
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <button
-        ref={btnRef}
-        className="ft-live-btn"
-        onClick={() => setOpen(o => !o)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-      >
-        <span className="ft-avatar">{initials}</span>
-        <span className="ft-user-label" style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {displayName}
-        </span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.8 }}>
-          <path d="M7 10l5 5 5-5" stroke="#CDE8FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-
-      {open && (
-        <div
-          ref={menuRef}
-          role="menu"
-          className="ft-user-menu"
-          style={{
-            position: 'absolute',
-            right: 0,
-            marginTop: 8,
-            width: 220,
-            background: '#0F141C',
-            border: '1px solid #1F2937',
-            borderRadius: 10,
-            boxShadow: '0 12px 40px rgba(0,0,0,0.35)',
-            padding: 8,
-            zIndex: 9999,
-          }}
-        >
-          <a href="/profile" role="menuitem" className="ft-user-menu-item">Profile</a>
-          <a href="/home" role="menuitem" className="ft-user-menu-item">Floor Dashboard</a>
-          <button role="menuitem" className="ft-user-menu-item danger" onClick={onLogout}>Log out</button>
-        </div>
-      )}
     </div>
   );
 }
@@ -564,33 +493,33 @@ export default function AdminDashboard() {
   );
 
   const globalPermsForDisplay = useMemo(() => {
-  if (isOwner) return globalPermsSorted;
-  if (isOrgAdmin) {
-    // show only entries for this admin’s groups
-    const allowedSet = new Set(myGroupIds);
-    const filtered = (globalPerms || []).filter(rec => allowedSet.has(String(rec.groupId)));
-    // reuse your sorter to keep UX consistent
-    return sortWith(
-      filtered,
-      ...(function () {
-        const f = sortGlobalPerms.field;
-        const ord = sortGlobalPerms.order;
-        if (f === 'groupName') return [by(x => x.groupName || '', ord)];
-        if (f === 'buildingName') return [by(x => x.buildingName || '', ord)];
-        if (f === 'floorName') return [by(x => x.floorName || '', ord)];
-        if (f === 'groupId') return [by(x => Number(x.groupId), ord)];
-        if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
-        if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
-        return [by(x => Number(x.id), ord)];
-      })(),
-      by(x => x.groupName || '', 'asc'),
-      by(x => x.buildingName || '', 'asc'),
-      by(x => x.floorName || '', 'asc'),
-      by(x => Number(x.id), 'asc')
-    );
-  }
-  return []; // Site Admin hidden; defensive
-}, [isOwner, isOrgAdmin, globalPerms, myGroupIds, globalPermsSorted, sortGlobalPerms]);
+    if (isOwner) return globalPermsSorted;
+    if (isOrgAdmin) {
+      // show only entries for this admin’s groups
+      const allowedSet = new Set(myGroupIds);
+      const filtered = (globalPerms || []).filter(rec => allowedSet.has(String(rec.groupId)));
+      // reuse your sorter to keep UX consistent
+      return sortWith(
+        filtered,
+        ...(function () {
+          const f = sortGlobalPerms.field;
+          const ord = sortGlobalPerms.order;
+          if (f === 'groupName') return [by(x => x.groupName || '', ord)];
+          if (f === 'buildingName') return [by(x => x.buildingName || '', ord)];
+          if (f === 'floorName') return [by(x => x.floorName || '', ord)];
+          if (f === 'groupId') return [by(x => Number(x.groupId), ord)];
+          if (f === 'buildingId') return [by(x => Number(x.buildingId), ord)];
+          if (f === 'floorId') return [by(x => Number(x.floorId), ord)];
+          return [by(x => Number(x.id), ord)];
+        })(),
+        by(x => x.groupName || '', 'asc'),
+        by(x => x.buildingName || '', 'asc'),
+        by(x => x.floorName || '', 'asc'),
+        by(x => Number(x.id), 'asc')
+      );
+    }
+    return []; // Site Admin hidden; defensive
+  }, [isOwner, isOrgAdmin, globalPerms, myGroupIds, globalPermsSorted, sortGlobalPerms]);
 
 
   const pendingSorted = useMemo(() =>
@@ -822,7 +751,13 @@ export default function AdminDashboard() {
           </a>
           <div className="ft-brand-text">Admin</div>
         </div>
-        <UserMenu email={email} name={displayName} onLogout={onLogout} />
+        <UserMenu
+          onLogout={onLogout}
+          canSeeAdmin={true}     // or compute like FloorDashboard if preferred
+          email={email}
+          name={displayName}
+          currentPath="/admin"
+        />
       </div>
 
       <div className="auth-tabs" style={{ marginBottom: 16 }}>
