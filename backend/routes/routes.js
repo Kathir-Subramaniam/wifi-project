@@ -1,18 +1,15 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
 
-const { PrismaClient } = require("@prisma/client");
+const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-const firebaseAuthController = require("../controllers/firebase-auth-controller");
-const verifyToken = require("../middleware");
-const PostsController = require("../controllers/posts-controller.js");
-const { admin } = require("../config/firebase");
-const {
-  getAppUser,
-  canManageBuilding,
-  canManageFloor,
-} = require("../controllers/rbac");
+const firebaseAuthController = require('../controllers/firebase-auth-controller');
+const verifyToken = require('../middleware');
+const PostsController = require('../controllers/posts-controller.js');
+const { admin } = require('../config/firebase');
+const { getAppUser, canManageBuilding, canManageFloor } = require('../controllers/rbac');
+const logger = require('../utils/logger');
 
 // Helpers
 const toBi = (v) => {
@@ -22,56 +19,86 @@ const toBi = (v) => {
 };
 
 // Auth routes
-router.post("/api/register", firebaseAuthController.registerUser);
-router.post("/api/login", firebaseAuthController.loginUser);
-router.post("/api/logout", firebaseAuthController.logoutUser);
-router.post("/api/reset-password", firebaseAuthController.resetPassword);
+router.post('/api/register', (req, res) => {
+  logger.info({ email: req.body?.email }, 'Register requested');
+  return firebaseAuthController.registerUser(req, res);
+});
+router.post('/api/login', (req, res) => {
+  logger.info({ email: req.body?.email }, 'Login requested');
+  return firebaseAuthController.loginUser(req, res);
+});
+router.post('/api/logout', (req, res) => {
+  logger.info({ uid: req.user?.uid }, 'Logout requested');
+  return firebaseAuthController.logoutUser(req, res);
+});
+router.post('/api/reset-password', (req, res) => {
+  logger.info({ email: req.body?.email }, 'Password reset requested');
+  return firebaseAuthController.resetPassword(req, res);
+});
 
 // Example protected posts
-router.get("/api/posts", verifyToken, PostsController.getPosts);
-
-// Groups
-router.get("/api/admin/groups", verifyToken, async (req, res) => {
+router.get('/api/posts', verifyToken, async (req, res) => {
   try {
-    const gs = await prisma.groups.findMany({ orderBy: { id: "asc" } });
-    res.json(gs.map((g) => ({ id: g.id.toString(), name: g.name })));
+    logger.debug({ uid: req.user?.uid }, 'List posts requested');
+    return PostsController.getPosts(req, res);
   } catch (e) {
-    res.status(500).json({ error: "Failed to list groups" });
+    logger.error({ err: e, uid: req.user?.uid }, 'Get posts failed');
+    res.status(500).json({ error: 'Failed to get posts' });
   }
 });
 
-router.post("/api/admin/groups", verifyToken, async (req, res) => {
+// Groups
+router.get('/api/admin/groups', verifyToken, async (req, res) => {
+  try {
+    logger.debug({ uid: req.user?.uid }, 'List groups');
+    const gs = await prisma.groups.findMany({ orderBy: { id: 'asc' } });
+    logger.info({ uid: req.user?.uid, count: gs.length }, 'Groups listed');
+    res.json(gs.map((g) => ({ id: g.id.toString(), name: g.name })));
+  } catch (e) {
+    logger.error({ err: e, uid: req.user?.uid }, 'List groups failed');
+    res.status(500).json({ error: 'Failed to list groups' });
+  }
+});
+
+router.post('/api/admin/groups', verifyToken, async (req, res) => {
   try {
     const { name } = req.body;
-    if (!name) return res.status(400).json({ error: "name required" });
+    if (!name) {
+      logger.warn({ uid: req.user?.uid }, 'Create group: missing name');
+      return res.status(400).json({ error: 'name required' });
+    }
     const g = await prisma.groups.create({ data: { name } });
+    logger.info({ uid: req.user?.uid, id: String(g.id), name }, 'Group created');
     res.json({ id: g.id.toString(), name: g.name });
   } catch (e) {
-    const msg = /Unique|unique/.test(e.message)
-      ? "Group already exists"
-      : "Failed to create group";
+    const msg = /Unique|unique/.test(e.message) ? 'Group already exists' : 'Failed to create group';
+    logger.error({ err: e, uid: req.user?.uid }, 'Create group failed');
     res.status(400).json({ error: msg });
   }
 });
 
-router.put("/api/admin/groups/:id", verifyToken, async (req, res) => {
+router.put('/api/admin/groups/:id', verifyToken, async (req, res) => {
   try {
     const id = BigInt(req.params.id);
     const { name } = req.body;
     const g = await prisma.groups.update({ where: { id }, data: { name } });
+    logger.info({ uid: req.user?.uid, id: String(id) }, 'Group updated');
     res.json({ id: g.id.toString(), name: g.name });
   } catch (e) {
-    res.status(500).json({ error: "Failed to update group" });
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'Update group failed');
+    res.status(500).json({ error: 'Failed to update group' });
   }
 });
 
-router.delete("/api/admin/groups/:id", verifyToken, async (req, res) => {
+router.delete('/api/admin/groups/:id', verifyToken, async (req, res) => {
   try {
     const id = BigInt(req.params.id);
     await prisma.groups.delete({ where: { id } });
+    logger.warn({ uid: req.user?.uid, id: String(id) }, 'Group deleted');
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: "Failed to delete group" });
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'Delete group failed');
+    res.status(500).json({ error: 'Failed to delete group' });
   }
 });
 
@@ -80,16 +107,18 @@ router.get('/api/admin/global-permissions', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
     if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'GlobalPermissions unauthorized');
       return res.status(401).json({ error: 'Unauthorized' });
     }
     const roleName = user?.role?.name || '';
+    logger.debug({ uid: req.user?.uid, role: roleName }, 'List GlobalPermissions');
 
-    // Owner: see everything
     if (roleName === 'Owner') {
       const rows = await prisma.globalPermissions.findMany({
         include: { group: true, building: true, floor: true },
         orderBy: { id: 'asc' },
       });
+      logger.info({ uid: req.user?.uid, count: rows.length }, 'GlobalPermissions listed for owner');
       return res.json(rows.map(rec => ({
         id: String(rec.id),
         groupId: String(rec.groupId),
@@ -101,17 +130,18 @@ router.get('/api/admin/global-permissions', verifyToken, async (req, res) => {
       })));
     }
 
-    // Org Admin: scope by their groups
     if (roleName === 'Organization Admin') {
       const myGroupIds = (user.userGroups || []).map(ug => ug.groupId);
       if (myGroupIds.length === 0) {
-        return res.json([]); // nothing to show
+        logger.info({ uid: req.user?.uid }, 'GlobalPermissions empty: org admin has no groups');
+        return res.json([]);
       }
       const rows = await prisma.globalPermissions.findMany({
         where: { groupId: { in: myGroupIds } },
         include: { group: true, building: true, floor: true },
         orderBy: { id: 'asc' },
       });
+      logger.info({ uid: req.user?.uid, count: rows.length }, 'GlobalPermissions listed for org admin');
       return res.json(rows.map(rec => ({
         id: String(rec.id),
         groupId: String(rec.groupId),
@@ -123,31 +153,26 @@ router.get('/api/admin/global-permissions', verifyToken, async (req, res) => {
       })));
     }
 
-    // Others: forbidden
+    logger.warn({ uid: req.user?.uid, role: roleName }, 'GlobalPermissions forbidden: role not allowed');
     return res.status(403).json({ error: 'Forbidden' });
   } catch (e) {
-    console.error('GET /api/admin/global-permissions error:', e);
+    logger.error({ err: e, uid: req.user?.uid }, 'GET /api/admin/global-permissions error');
     return res.status(500).json({ error: 'Server error' });
   }
 });
 
-router.post("/api/admin/global-permissions", verifyToken, async (req, res) => {
+router.post('/api/admin/global-permissions', verifyToken, async (req, res) => {
   try {
-    const toBi = (s) => BigInt(String(s));
     const { groupId, buildingId, floorId } = req.body;
     if (!groupId || !buildingId || !floorId) {
-      return res
-        .status(400)
-        .json({ error: "groupId, buildingId, floorId required" });
+      logger.warn({ uid: req.user?.uid }, 'Create GP: missing fields');
+      return res.status(400).json({ error: 'groupId, buildingId, floorId required' });
     }
     const created = await prisma.globalPermissions.create({
-      data: {
-        groupId: toBi(groupId),
-        buildingId: toBi(buildingId),
-        floorId: toBi(floorId),
-      },
+      data: { groupId: toBi(groupId), buildingId: toBi(buildingId), floorId: toBi(floorId) },
       include: { group: true, building: true, floor: true },
     });
+    logger.info({ uid: req.user?.uid, id: String(created.id) }, 'GlobalPermission created');
     res.json({
       id: created.id.toString(),
       groupId: created.groupId.toString(),
@@ -158,266 +183,263 @@ router.post("/api/admin/global-permissions", verifyToken, async (req, res) => {
       floorName: created.floor?.name || null,
     });
   } catch (e) {
-    res.status(500).json({ error: "Failed to create global permission" });
+    logger.error({ err: e, uid: req.user?.uid }, 'Create GlobalPermission failed');
+    res.status(500).json({ error: 'Failed to create global permission' });
   }
 });
 
-router.delete(
-  "/api/admin/global-permissions/:id",
-  verifyToken,
-  async (req, res) => {
-    try {
-      const id = BigInt(req.params.id);
-      await prisma.globalPermissions.delete({ where: { id } });
-      res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ error: "Failed to delete global permission" });
-    }
+router.delete('/api/admin/global-permissions/:id', verifyToken, async (req, res) => {
+  try {
+    const id = BigInt(req.params.id);
+    await prisma.globalPermissions.delete({ where: { id } });
+    logger.warn({ uid: req.user?.uid, id: String(id) }, 'GlobalPermission deleted');
+    res.json({ ok: true });
+  } catch (e) {
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'Delete GlobalPermission failed');
+    res.status(500).json({ error: 'Failed to delete global permission' });
   }
-);
+});
 
 // Buildings
-// routes.js
-router.get("/api/admin/buildings", verifyToken, async (req, res) => {
+router.get('/api/admin/buildings', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'List buildings unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const role = user.role?.name || '';
     let buildings = [];
 
-    if (role === "Owner") {
-      buildings = await prisma.buildings.findMany({ orderBy: { id: "asc" } });
-    } else if (role === "Organization Admin" || role === "Site Admin") {
+    logger.debug({ uid: req.user?.uid, role }, 'List buildings');
+
+    if (role === 'Owner') {
+      buildings = await prisma.buildings.findMany({ orderBy: { id: 'asc' } });
+    } else if (role === 'Organization Admin' || role === 'Site Admin') {
       const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
-      if (groupIds.length === 0) return res.json([]);
+      if (groupIds.length === 0) {
+        logger.info({ uid: req.user?.uid, role }, 'No buildings: no groups');
+        return res.json([]);
+      }
       buildings = await prisma.buildings.findMany({
         where: { globalPermissions: { some: { groupId: { in: groupIds } } } },
-        orderBy: { id: "asc" },
+        orderBy: { id: 'asc' },
       });
     } else {
-      // other roles: no buildings
+      logger.info({ uid: req.user?.uid, role }, 'No buildings: role not allowed');
       return res.json([]);
     }
 
+    logger.info({ uid: req.user?.uid, count: buildings.length }, 'Buildings listed');
     res.json(buildings.map((b) => ({ id: b.id.toString(), name: b.name })));
   } catch (e) {
-    console.error("GET /api/admin/buildings failed", e);
-    res.status(500).json({ error: "Failed to list buildings" });
+    logger.error({ err: e, uid: req.user?.uid }, 'GET /api/admin/buildings failed');
+    res.status(500).json({ error: 'Failed to list buildings' });
   }
 });
 
-
-router.post("/api/admin/buildings", verifyToken, async (req, res) => {
+router.post('/api/admin/buildings', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
-    if (user.role?.name !== "Owner")
-      return res.status(403).json({ error: "Only Owner can create buildings" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Create building unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (user.role?.name !== 'Owner') {
+      logger.warn({ uid: req.user?.uid, role: user.role?.name }, 'Create building forbidden');
+      return res.status(403).json({ error: 'Only Owner can create buildings' });
+    }
 
     const { name } = req.body;
-    if (!name) return res.status(400).json({ error: "name required" });
+    if (!name) {
+      logger.warn({ uid: req.user?.uid }, 'Create building: missing name');
+      return res.status(400).json({ error: 'name required' });
+    }
 
     const b = await prisma.buildings.create({ data: { name } });
+    logger.info({ uid: req.user?.uid, id: String(b.id), name }, 'Building created');
     res.json({ id: b.id.toString(), name: b.name });
   } catch (e) {
-    console.error("POST /api/admin/buildings failed", e);
-    res.status(500).json({ error: "Failed to create building" });
+    logger.error({ err: e, uid: req.user?.uid }, 'POST /api/admin/buildings failed');
+    res.status(500).json({ error: 'Failed to create building' });
   }
 });
 
-router.put("/api/admin/buildings/:id", verifyToken, async (req, res) => {
+router.put('/api/admin/buildings/:id', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
     const id = req.params.id;
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
-    if (user.role?.name !== "Owner")
-      return res.status(403).json({ error: "Only Owner can Edit Building" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Update building unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (user.role?.name !== 'Owner') {
+      logger.warn({ uid: req.user?.uid, role: user.role?.name }, 'Update building forbidden');
+      return res.status(403).json({ error: 'Only Owner can Edit Building' });
+    }
 
     const { name } = req.body;
-    const b = await prisma.buildings.update({
-      where: { id: toBi(id) },
-      data: { name },
-    });
+    const b = await prisma.buildings.update({ where: { id: toBi(id) }, data: { name } });
+    logger.info({ uid: req.user?.uid, id }, 'Building updated');
     res.json({ id: b.id.toString(), name: b.name });
   } catch (e) {
-    console.error("PUT /api/admin/buildings/:id failed", e);
-    res.status(500).json({ error: "Failed to update building" });
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'PUT /api/admin/buildings/:id failed');
+    res.status(500).json({ error: 'Failed to update building' });
   }
 });
 
-router.delete("/api/admin/buildings/:id", verifyToken, async (req, res) => {
+router.delete('/api/admin/buildings/:id', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
     const id = req.params.id;
-    if (!user || user.role?.name !== "Owner")
-      return res.status(403).json({ error: "Only Owner can delete buildings" });
+    if (!user || user.role?.name !== 'Owner') {
+      logger.warn({ uid: req.user?.uid, role: user?.role?.name }, 'Delete building forbidden');
+      return res.status(403).json({ error: 'Only Owner can delete buildings' });
+    }
 
     await prisma.buildings.delete({ where: { id: toBi(id) } });
+    logger.warn({ uid: req.user?.uid, id }, 'Building deleted');
     res.json({ ok: true });
   } catch (e) {
-    console.error("DELETE /api/admin/buildings/:id failed", e);
-    res.status(500).json({ error: "Failed to delete building" });
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'DELETE /api/admin/buildings/:id failed');
+    res.status(500).json({ error: 'Failed to delete building' });
   }
 });
 
 // Floors
-// routes.js
-router.get("/api/admin/floors", verifyToken, async (req, res) => {
+router.get('/api/admin/floors', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'List floors unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const role = user.role?.name || '';
     let floors = [];
 
-    if (role === "Owner") {
-      floors = await prisma.floors.findMany({
-        include: { building: true },
-        orderBy: { id: "asc" },
-      });
-    } else if (role === "Organization Admin" || role === "Site Admin") {
-      const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
-      if (groupIds.length === 0) return res.json([]);
+    logger.debug({ uid: req.user?.uid, role }, 'List floors');
 
-      // STRICT floor-only: a group must have a GP entry for that floorId
+    if (role === 'Owner') {
+      floors = await prisma.floors.findMany({ include: { building: true }, orderBy: { id: 'asc' } });
+    } else if (role === 'Organization Admin' || role === 'Site Admin') {
+      const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
+      if (groupIds.length === 0) {
+        logger.info({ uid: req.user?.uid, role }, 'No floors: no groups');
+        return res.json([]);
+      }
+
       floors = await prisma.floors.findMany({
-        where: {
-          globalPermissions: { some: { groupId: { in: groupIds } } },
-        },
+        where: { globalPermissions: { some: { groupId: { in: groupIds } } } },
         include: { building: true },
-        orderBy: { id: "asc" },
+        orderBy: { id: 'asc' },
       });
     } else {
+      logger.info({ uid: req.user?.uid, role }, 'No floors: role not allowed');
       return res.json([]);
     }
 
-    res.json(
-      floors.map((f) => ({
-        id: f.id.toString(),
-        name: f.name,
-        buildingId: f.buildingId.toString(),
-        buildingName: f.building?.name ?? null,
-      }))
-    );
+    const payload = floors.map((f) => ({
+      id: f.id.toString(),
+      name: f.name,
+      buildingId: f.buildingId.toString(),
+      buildingName: f.building?.name ?? null,
+    }));
+
+    logger.info({ uid: req.user?.uid, count: payload.length }, 'Floors listed');
+    res.json(payload);
   } catch (e) {
-    console.error("GET /api/admin/floors failed", e);
-    res.status(500).json({ error: "Failed to list floors" });
+    logger.error({ err: e, uid: req.user?.uid }, 'GET /api/admin/floors failed');
+    res.status(500).json({ error: 'Failed to list floors' });
   }
 });
 
-
-
-// routes.js (POST /api/admin/floors)
-router.post("/api/admin/floors", verifyToken, async (req, res) => {
+router.post('/api/admin/floors', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Create floor unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const role = user.role?.name;
     const { name, svgMap, buildingId } = req.body;
     if (!name || !svgMap || !buildingId) {
-      return res.status(400).json({ error: "name, svgMap, buildingId required" });
+      logger.warn({ uid: req.user?.uid }, 'Create floor: missing fields');
+      return res.status(400).json({ error: 'name, svgMap, buildingId required' });
     }
 
-    // Site Admin: blocked from creating
-    if (role === "Site Admin") {
-      return res.status(403).json({ error: "Site Admins cannot create floors" });
+    if (role === 'Site Admin') {
+      logger.warn({ uid: req.user?.uid }, 'Create floor forbidden: site admin');
+      return res.status(403).json({ error: 'Site Admins cannot create floors' });
     }
 
-    // Helper: pick a groupId to grant. Prefer the first group the user belongs to.
     const firstGroupId = (user.userGroups || [])[0]?.groupId;
-    // If you want to require a group for automatic GP, you can enforce it:
-    // if (!firstGroupId) return res.status(400).json({ error: "User must belong to a group to create floors" });
 
-    // Owner: can always create
-    if (role === "Owner") {
+    if (role === 'Owner') {
       const result = await prisma.$transaction(async (tx) => {
-        const floor = await tx.floors.create({
-          data: { name, svgMap, buildingId: toBi(buildingId) },
-        });
-
-        // If the owner has at least one group, add a GP row automatically
+        const floor = await tx.floors.create({ data: { name, svgMap, buildingId: toBi(buildingId) } });
         if (firstGroupId) {
           await tx.globalPermissions.create({
-            data: {
-              groupId: firstGroupId,
-              buildingId: toBi(buildingId),
-              floorId: floor.id,
-            },
+            data: { groupId: firstGroupId, buildingId: toBi(buildingId), floorId: floor.id },
           });
         }
-
         return floor;
       });
 
-      return res.json({
-        id: result.id.toString(),
-        name: result.name,
-        buildingId: result.buildingId.toString(),
-        // optionally include grantedGroupId: firstGroupId?.toString() ?? null
-      });
+      logger.info({ uid: req.user?.uid, id: String(result.id), buildingId: String(buildingId) }, 'Floor created (owner)');
+      return res.json({ id: result.id.toString(), name: result.name, buildingId: result.buildingId.toString() });
     }
 
-    // Org Admin: create only if they can manage the target building
-    if (role === "Organization Admin") {
+    if (role === 'Organization Admin') {
       const ok = await canManageBuilding(user, buildingId);
-      if (!ok) return res.status(403).json({ error: "Forbidden for building" });
+      if (!ok) {
+        logger.warn({ uid: req.user?.uid, buildingId: String(buildingId) }, 'Create floor forbidden: org admin cannot manage building');
+        return res.status(403).json({ error: 'Forbidden for building' });
+      }
 
       const result = await prisma.$transaction(async (tx) => {
-        const floor = await tx.floors.create({
-          data: { name, svgMap, buildingId: toBi(buildingId) },
-        });
-
-        // Require a group to grant. If none, we skip GP creation but still return the floor.
+        const floor = await tx.floors.create({ data: { name, svgMap, buildingId: toBi(buildingId) } });
         if (firstGroupId) {
           await tx.globalPermissions.create({
-            data: {
-              groupId: firstGroupId,
-              buildingId: toBi(buildingId),
-              floorId: floor.id,
-            },
+            data: { groupId: firstGroupId, buildingId: toBi(buildingId), floorId: floor.id },
           });
         }
-
         return floor;
       });
 
-      return res.json({
-        id: result.id.toString(),
-        name: result.name,
-        buildingId: result.buildingId.toString(),
-        // optionally include grantedGroupId: firstGroupId?.toString() ?? null
-      });
+      logger.info({ uid: req.user?.uid, id: String(result.id), buildingId: String(buildingId) }, 'Floor created (org admin)');
+      return res.json({ id: result.id.toString(), name: result.name, buildingId: result.buildingId.toString() });
     }
 
-    // Everyone else forbidden
-    return res.status(403).json({ error: "Forbidden" });
+    logger.warn({ uid: req.user?.uid, role }, 'Create floor forbidden: role not allowed');
+    return res.status(403).json({ error: 'Forbidden' });
   } catch (e) {
-    console.error("POST /api/admin/floors failed", e);
-    res.status(500).json({ error: "Failed to create floor" });
+    logger.error({ err: e, uid: req.user?.uid }, 'POST /api/admin/floors failed');
+    res.status(500).json({ error: 'Failed to create floor' });
   }
 });
 
-
-
-// routes.js (PUT /api/admin/floors/:id)
-router.put("/api/admin/floors/:id", verifyToken, async (req, res) => {
+router.put('/api/admin/floors/:id', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
     const id = req.params.id;
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Update floor unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const role = user.role?.name;
 
-    // Site Admin: blocked from editing
-    if (role === "Site Admin") {
-      return res.status(403).json({ error: "Site Admins cannot edit floors" });
+    if (role === 'Site Admin') {
+      logger.warn({ uid: req.user?.uid }, 'Update floor forbidden: site admin');
+      return res.status(403).json({ error: 'Site Admins cannot edit floors' });
     }
 
-    // Owner can always edit; Org Admin must be scoped to the floor
-    if (role !== "Owner" && !(await canManageFloor(user, id))) {
-      return res.status(403).json({ error: "Forbidden" });
+    if (role !== 'Owner' && !(await canManageFloor(user, id))) {
+      logger.warn({ uid: req.user?.uid, floorId: id }, 'Update floor forbidden: not scoped');
+      return res.status(403).json({ error: 'Forbidden' });
     }
 
     const { name, svgMap } = req.body;
@@ -425,136 +447,146 @@ router.put("/api/admin/floors/:id", verifyToken, async (req, res) => {
       where: { id: toBi(id) },
       data: { ...(name && { name }), ...(svgMap && { svgMap }) },
     });
+
+    logger.info({ uid: req.user?.uid, id }, 'Floor updated');
     res.json({ id: f.id.toString(), name: f.name });
   } catch (e) {
-    console.error("PUT /api/admin/floors/:id failed", e);
-    res.status(500).json({ error: "Failed to update floor" });
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'PUT /api/admin/floors/:id failed');
+    res.status(500).json({ error: 'Failed to update floor' });
   }
 });
 
-
-// routes.js (DELETE /api/admin/floors/:id)
-router.delete("/api/admin/floors/:id", verifyToken, async (req, res) => {
+router.delete('/api/admin/floors/:id', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
     const id = req.params.id;
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Delete floor unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const role = user.role?.name;
 
-    // Site Admin: blocked from deleting
-    if (role === "Site Admin") {
-      return res.status(403).json({ error: "Site Admins cannot delete floors" });
+    if (role === 'Site Admin') {
+      logger.warn({ uid: req.user?.uid }, 'Delete floor forbidden: site admin');
+      return res.status(403).json({ error: 'Site Admins cannot delete floors' });
     }
 
-    // Owner can delete any; Org Admin only if scoped
-    if (role !== "Owner" && !(await canManageFloor(user, id))) {
-      return res.status(403).json({ error: "Forbidden" });
+    if (role !== 'Owner' && !(await canManageFloor(user, id))) {
+      logger.warn({ uid: req.user?.uid, floorId: id }, 'Delete floor forbidden: not scoped');
+      return res.status(403).json({ error: 'Forbidden' });
     }
 
     await prisma.floors.delete({ where: { id: toBi(id) } });
+    logger.warn({ uid: req.user?.uid, id }, 'Floor deleted');
     res.json({ ok: true });
   } catch (e) {
-    console.error("DELETE /api/admin/floors/:id failed", e);
-    res.status(500).json({ error: "Failed to delete floor" });
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'DELETE /api/admin/floors/:id failed');
+    res.status(500).json({ error: 'Failed to delete floor' });
   }
 });
-
 
 // APs
-// routes.js
-router.get("/api/admin/aps", verifyToken, async (req, res) => {
+router.get('/api/admin/aps', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'List APs unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const role = user.role?.name || '';
+    logger.debug({ uid: req.user?.uid, role }, 'List APs');
 
-    if (role === "Owner") {
-      const aps = await prisma.aPs.findMany({
-        include: { floor: { include: { building: true } } },
-        orderBy: { id: "asc" },
-      });
-      return res.json(
-        aps.map((ap) => ({
-          id: ap.id.toString(),
-          name: ap.name,
-          cx: ap.cx,
-          cy: ap.cy,
-          floorId: ap.floorId.toString(),
-          buildingId: ap.floor.buildingId.toString(),
-        }))
-      );
+    if (role === 'Owner') {
+      const aps = await prisma.aPs.findMany({ include: { floor: { include: { building: true } } }, orderBy: { id: 'asc' } });
+      logger.info({ uid: req.user?.uid, count: aps.length }, 'APs listed for owner');
+      return res.json(aps.map((ap) => ({
+        id: ap.id.toString(),
+        name: ap.name,
+        cx: ap.cx,
+        cy: ap.cy,
+        floorId: ap.floorId.toString(),
+        buildingId: ap.floor.buildingId.toString(),
+      })));
     }
 
-    if (role === "Organization Admin" || role === "Site Admin") {
+    if (role === 'Organization Admin' || role === 'Site Admin') {
       const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
-      if (groupIds.length === 0) return res.json([]);
-
-      // STRICT floor-only: APs whose floor has a GP entry for one of the user’s groups
+      if (groupIds.length === 0) {
+        logger.info({ uid: req.user?.uid }, 'APs empty: no groups');
+        return res.json([]);
+      }
       const aps = await prisma.aPs.findMany({
-        where: {
-          floor: {
-            globalPermissions: { some: { groupId: { in: groupIds } } },
-          },
-        },
+        where: { floor: { globalPermissions: { some: { groupId: { in: groupIds } } } } },
         include: { floor: { include: { building: true } } },
-        orderBy: { id: "asc" },
+        orderBy: { id: 'asc' },
       });
-
-      return res.json(
-        aps.map((ap) => ({
-          id: ap.id.toString(),
-          name: ap.name,
-          cx: ap.cx,
-          cy: ap.cy,
-          floorId: ap.floorId.toString(),
-          buildingId: ap.floor.buildingId.toString(),
-        }))
-      );
+      logger.info({ uid: req.user?.uid, count: aps.length }, 'APs listed for admin');
+      return res.json(aps.map((ap) => ({
+        id: ap.id.toString(),
+        name: ap.name,
+        cx: ap.cx,
+        cy: ap.cy,
+        floorId: ap.floorId.toString(),
+        buildingId: ap.floor.buildingId.toString(),
+      })));
     }
 
+    logger.info({ uid: req.user?.uid, role }, 'APs empty: role not allowed');
     return res.json([]);
   } catch (e) {
-    console.error("GET /api/admin/aps failed", e);
-    res.status(500).json({ error: "Failed to list APs" });
+    logger.error({ err: e, uid: req.user?.uid }, 'GET /api/admin/aps failed');
+    res.status(500).json({ error: 'Failed to list APs' });
   }
 });
 
-
-
-router.post("/api/admin/aps", verifyToken, async (req, res) => {
+router.post('/api/admin/aps', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Create AP unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const { name, cx, cy, floorId } = req.body;
-    if (!name || cx == null || cy == null || !floorId)
-      return res.status(400).json({ error: "name, cx, cy, floorId required" });
+    if (!name || cx == null || cy == null || !floorId) {
+      logger.warn({ uid: req.user?.uid }, 'Create AP: missing fields');
+      return res.status(400).json({ error: 'name, cx, cy, floorId required' });
+    }
 
-    if (!(await canManageFloor(user, floorId)))
-      return res.status(403).json({ error: "Forbidden for floor" });
+    if (!(await canManageFloor(user, floorId))) {
+      logger.warn({ uid: req.user?.uid, floorId }, 'Create AP forbidden: cannot manage floor');
+      return res.status(403).json({ error: 'Forbidden for floor' });
+    }
 
-    const ap = await prisma.aPs.create({
-      data: { name, cx: Number(cx), cy: Number(cy), floorId: toBi(floorId) },
-    });
+    const ap = await prisma.aPs.create({ data: { name, cx: Number(cx), cy: Number(cy), floorId: toBi(floorId) } });
+    logger.info({ uid: req.user?.uid, id: String(ap.id), floorId }, 'AP created');
     res.json({ id: ap.id.toString(), name: ap.name });
   } catch (e) {
-    console.error("POST /api/admin/aps failed", e);
-    res.status(500).json({ error: "Failed to create AP" });
+    logger.error({ err: e, uid: req.user?.uid }, 'POST /api/admin/aps failed');
+    res.status(500).json({ error: 'Failed to create AP' });
   }
 });
 
-router.put("/api/admin/aps/:id", verifyToken, async (req, res) => {
+router.put('/api/admin/aps/:id', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Update AP unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const apId = req.params.id;
     const ap = await prisma.aPs.findUnique({ where: { id: toBi(apId) } });
-    if (!ap) return res.status(404).json({ error: "AP not found" });
-    if (!(await canManageFloor(user, ap.floorId)))
-      return res.status(403).json({ error: "Forbidden" });
+    if (!ap) {
+      logger.warn({ uid: req.user?.uid, apId }, 'Update AP not found');
+      return res.status(404).json({ error: 'AP not found' });
+    }
+    if (!(await canManageFloor(user, ap.floorId))) {
+      logger.warn({ uid: req.user?.uid, floorId: String(ap.floorId) }, 'Update AP forbidden: cannot manage floor');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
     const { name, cx, cy } = req.body;
     const updated = await prisma.aPs.update({
@@ -565,176 +597,198 @@ router.put("/api/admin/aps/:id", verifyToken, async (req, res) => {
         ...(cy != null && { cy: Number(cy) }),
       },
     });
+
+    logger.info({ uid: req.user?.uid, id: apId }, 'AP updated');
     res.json({ id: updated.id.toString(), name: updated.name });
   } catch (e) {
-    console.error("PUT /api/admin/aps/:id failed", e);
-    res.status(500).json({ error: "Failed to update AP" });
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'PUT /api/admin/aps/:id failed');
+    res.status(500).json({ error: 'Failed to update AP' });
   }
 });
 
-router.delete("/api/admin/aps/:id", verifyToken, async (req, res) => {
+router.delete('/api/admin/aps/:id', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Delete AP unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const apId = req.params.id;
     const ap = await prisma.aPs.findUnique({ where: { id: toBi(apId) } });
-    if (!ap) return res.status(404).json({ error: "AP not found" });
-    if (
-      !(await canManageFloor(user, ap.floorId)) &&
-      user.role?.name !== "Owner"
-    )
-      return res.status(403).json({ error: "Forbidden" });
+    if (!ap) {
+      logger.warn({ uid: req.user?.uid, apId }, 'Delete AP not found');
+      return res.status(404).json({ error: 'AP not found' });
+    }
+    if (!(await canManageFloor(user, ap.floorId)) && user.role?.name !== 'Owner') {
+      logger.warn({ uid: req.user?.uid, floorId: String(ap.floorId) }, 'Delete AP forbidden: not scoped');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
     await prisma.aPs.delete({ where: { id: toBi(apId) } });
+    logger.warn({ uid: req.user?.uid, id: apId }, 'AP deleted');
     res.json({ ok: true });
   } catch (e) {
-    console.error("DELETE /api/admin/aps/:id failed", e);
-    res.status(500).json({ error: "Failed to delete AP" });
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'DELETE /api/admin/aps/:id failed');
+    res.status(500).json({ error: 'Failed to delete AP' });
   }
 });
 
 // Devices (Clients)
-// routes.js
-router.get("/api/admin/devices", verifyToken, async (req, res) => {
+router.get('/api/admin/devices', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'List devices unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const role = user.role?.name || '';
+    logger.debug({ uid: req.user?.uid, role }, 'List devices');
 
-    if (role === "Owner") {
+    if (role === 'Owner') {
       const devices = await prisma.clients.findMany({
         include: { ap: { include: { floor: { include: { building: true } } } } },
-        orderBy: { id: "asc" },
+        orderBy: { id: 'asc' },
       });
-      return res.json(
-        devices.map((d) => ({
-          id: d.id.toString(),
-          mac: d.mac,
-          apId: d.apId.toString(),
-          floorId: d.ap.floorId.toString(),
-          buildingId: d.ap.floor.buildingId.toString(),
-          createdAt: d.createdAt,
-        }))
-      );
+      logger.info({ uid: req.user?.uid, count: devices.length }, 'Devices listed for owner');
+      return res.json(devices.map((d) => ({
+        id: d.id.toString(),
+        mac: d.mac,
+        apId: d.apId.toString(),
+        floorId: d.ap.floorId.toString(),
+        buildingId: d.ap.floor.buildingId.toString(),
+        createdAt: d.createdAt,
+      })));
     }
 
-    if (role === "Organization Admin" || role === "Site Admin") {
+    if (role === 'Organization Admin' || role === 'Site Admin') {
       const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
-      if (groupIds.length === 0) return res.json([]);
-
-      // STRICT floor-only: devices whose AP’s floor has GP for user’s groups
+      if (groupIds.length === 0) {
+        logger.info({ uid: req.user?.uid }, 'Devices empty: no groups');
+        return res.json([]);
+      }
       const devices = await prisma.clients.findMany({
-        where: {
-          ap: {
-            floor: {
-              globalPermissions: { some: { groupId: { in: groupIds } } },
-            },
-          },
-        },
+        where: { ap: { floor: { globalPermissions: { some: { groupId: { in: groupIds } } } } } },
         include: { ap: { include: { floor: { include: { building: true } } } } },
-        orderBy: { id: "asc" },
+        orderBy: { id: 'asc' },
       });
-
-      return res.json(
-        devices.map((d) => ({
-          id: d.id.toString(),
-          mac: d.mac,
-          apId: d.apId.toString(),
-          floorId: d.ap.floorId.toString(),
-          buildingId: d.ap.floor.buildingId.toString(),
-          createdAt: d.createdAt,
-        }))
-      );
+      logger.info({ uid: req.user?.uid, count: devices.length }, 'Devices listed for admin');
+      return res.json(devices.map((d) => ({
+        id: d.id.toString(),
+        mac: d.mac,
+        apId: d.apId.toString(),
+        floorId: d.ap.floorId.toString(),
+        buildingId: d.ap.floor.buildingId.toString(),
+        createdAt: d.createdAt,
+      })));
     }
 
+    logger.info({ uid: req.user?.uid, role }, 'Devices empty: role not allowed');
     return res.json([]);
   } catch (e) {
-    console.error("GET /api/admin/devices failed", e);
-    res.status(500).json({ error: "Failed to list devices" });
+    logger.error({ err: e, uid: req.user?.uid }, 'GET /api/admin/devices failed');
+    res.status(500).json({ error: 'Failed to list devices' });
   }
 });
 
-
-router.post("/api/admin/devices", verifyToken, async (req, res) => {
+router.post('/api/admin/devices', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Create device unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const { mac, apId } = req.body;
-    if (!mac || !apId)
-      return res.status(400).json({ error: "mac and apId required" });
+    if (!mac || !apId) {
+      logger.warn({ uid: req.user?.uid }, 'Create device: missing fields');
+      return res.status(400).json({ error: 'mac and apId required' });
+    }
 
     const ap = await prisma.aPs.findUnique({ where: { id: toBi(apId) } });
-    if (!ap) return res.status(404).json({ error: "AP not found" });
-    if (!(await canManageFloor(user, ap.floorId)))
-      return res.status(403).json({ error: "Forbidden" });
+    if (!ap) {
+      logger.warn({ uid: req.user?.uid, apId }, 'Create device: AP not found');
+      return res.status(404).json({ error: 'AP not found' });
+    }
+    if (!(await canManageFloor(user, ap.floorId))) {
+      logger.warn({ uid: req.user?.uid, floorId: String(ap.floorId) }, 'Create device forbidden: cannot manage floor');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
-    const created = await prisma.clients.create({
-      data: { mac, apId: toBi(apId) },
-    });
+    const created = await prisma.clients.create({ data: { mac, apId: toBi(apId) } });
+    logger.info({ uid: req.user?.uid, id: String(created.id), apId }, 'Device created');
     res.json({ id: created.id.toString(), mac: created.mac });
   } catch (e) {
-    console.error("POST /api/admin/devices failed", e);
-    res.status(500).json({ error: "Failed to create device" });
+    logger.error({ err: e, uid: req.user?.uid }, 'POST /api/admin/devices failed');
+    res.status(500).json({ error: 'Failed to create device' });
   }
 });
 
-router.put("/api/admin/devices/:id", verifyToken, async (req, res) => {
+router.put('/api/admin/devices/:id', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Update device unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const id = req.params.id;
-    const toBi = (v) => {
+    const toBiLocal = (v) => {
       const s = String(v);
       if (!/^\d+$/.test(s)) throw new Error(`Invalid ID: ${s}`);
       return BigInt(s);
     };
 
-    // Load existing device with its floor to check permissions
     const existing = await prisma.clients.findUnique({
-      where: { id: toBi(id) },
+      where: { id: toBiLocal(id) },
       include: { ap: { select: { id: true, floorId: true } } },
     });
-    if (!existing) return res.status(404).json({ error: "Device not found" });
+    if (!existing) {
+      logger.warn({ uid: req.user?.uid, id }, 'Update device not found');
+      return res.status(404).json({ error: 'Device not found' });
+    }
 
     if (!(await canManageFloor(user, existing.ap.floorId))) {
-      return res.status(403).json({ error: "Forbidden" });
+      logger.warn({ uid: req.user?.uid, floorId: String(existing.ap.floorId) }, 'Update device forbidden: cannot manage floor');
+      return res.status(403).json({ error: 'Forbidden' });
     }
 
     const { mac, apId } = req.body;
     const data = {};
 
-    if (mac != null) {
-      data.mac = mac;
-    }
+    if (mac != null) data.mac = mac;
 
     if (apId != null) {
       const targetAp = await prisma.aPs.findUnique({
-        where: { id: toBi(apId) },
+        where: { id: toBiLocal(apId) },
         select: { id: true, floorId: true },
       });
-      if (!targetAp) return res.status(404).json({ error: "AP not found" });
-
-      if (!(await canManageFloor(user, targetAp.floorId))) {
-        return res.status(403).json({ error: "Forbidden for target floor" });
+      if (!targetAp) {
+        logger.warn({ uid: req.user?.uid, apId }, 'Update device: target AP not found');
+        return res.status(404).json({ error: 'AP not found' });
       }
 
-      data.apId = toBi(apId);
+      if (!(await canManageFloor(user, targetAp.floorId))) {
+        logger.warn({ uid: req.user?.uid, floorId: String(targetAp.floorId) }, 'Update device forbidden: cannot manage target floor');
+        return res.status(403).json({ error: 'Forbidden for target floor' });
+      }
+
+      data.apId = toBiLocal(apId);
     }
 
     if (Object.keys(data).length === 0) {
-      return res.status(400).json({ error: "No valid fields to update" });
+      logger.warn({ uid: req.user?.uid, id }, 'Update device: no valid fields');
+      return res.status(400).json({ error: 'No valid fields to update' });
     }
 
     const updated = await prisma.clients.update({
-      where: { id: toBi(id) },
+      where: { id: toBiLocal(id) },
       data,
       include: { ap: { select: { floorId: true } } },
     });
 
+    logger.info({ uid: req.user?.uid, id }, 'Device updated');
     res.json({
       id: updated.id.toString(),
       mac: updated.mac,
@@ -742,50 +796,55 @@ router.put("/api/admin/devices/:id", verifyToken, async (req, res) => {
       floorId: updated.ap?.floorId?.toString?.() ?? undefined,
     });
   } catch (e) {
-    console.error("PUT /api/admin/devices/:id failed", e);
-    const msg = /Unique|unique/i.test(e.message)
-      ? "MAC already exists"
-      : "Failed to update device";
+    const msg = /Unique|unique/i.test(e.message) ? 'MAC already exists' : 'Failed to update device';
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'PUT /api/admin/devices/:id failed');
     res.status(400).json({ error: msg });
   }
 });
 
-router.delete("/api/admin/devices/:id", verifyToken, async (req, res) => {
+router.delete('/api/admin/devices/:id', verifyToken, async (req, res) => {
   try {
     const user = await getAppUser(req);
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Delete device unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const id = req.params.id;
     const device = await prisma.clients.findUnique({
       where: { id: toBi(id) },
       include: { ap: { select: { floorId: true } } },
     });
-    if (!device) return res.status(404).json({ error: "Device not found" });
-    if (
-      !(await canManageFloor(user, device.ap.floorId)) &&
-      user.role?.name !== "Owner"
-    )
-      return res.status(403).json({ error: "Forbidden" });
+    if (!device) {
+      logger.warn({ uid: req.user?.uid, id }, 'Delete device not found');
+      return res.status(404).json({ error: 'Device not found' });
+    }
+    if (!(await canManageFloor(user, device.ap.floorId)) && user.role?.name !== 'Owner') {
+      logger.warn({ uid: req.user?.uid, floorId: String(device.ap.floorId) }, 'Delete device forbidden: not scoped');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
     await prisma.clients.delete({ where: { id: toBi(id) } });
+    logger.warn({ uid: req.user?.uid, id }, 'Device deleted');
     res.json({ ok: true });
   } catch (e) {
-    console.error("DELETE /api/admin/devices/:id failed", e);
-    res.status(500).json({ error: "Failed to delete device" });
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'DELETE /api/admin/devices/:id failed');
+    res.status(500).json({ error: 'Failed to delete device' });
   }
 });
 
-router.get("/api/profile", verifyToken, async (req, res) => {
+// Profile
+router.get('/api/profile', verifyToken, async (req, res) => {
   try {
     const u = await prisma.users.findUnique({
       where: { firebaseUid: req.user.uid },
-      include: {
-        role: true,
-        userGroups: { include: { group: true } }, // optional; remove if you don’t need it
-      },
+      include: { role: true, userGroups: { include: { group: true } } },
     });
-    if (!u) return res.status(403).json({ error: "Unauthorized" });
-
+    if (!u) {
+      logger.warn({ uid: req.user?.uid }, 'Profile unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    logger.info({ uid: req.user?.uid }, 'Profile loaded');
     res.json({
       user: {
         id: u.id.toString(),
@@ -793,292 +852,249 @@ router.get("/api/profile", verifyToken, async (req, res) => {
         firstName: u.firstName,
         lastName: u.lastName,
         role: u.role ? { id: u.role.id.toString(), name: u.role.name } : null,
-        // include more fields as needed, but keep it BigInt-safe:
         groups: u.userGroups?.map(g => ({ id: g.group.id.toString(), name: g.group.name })) ?? [],
       },
     });
   } catch (e) {
-    console.error("GET /api/profile failed", e);
-    res.status(500).json({ error: "Failed to load profile" });
+    logger.error({ err: e, uid: req.user?.uid }, 'GET /api/profile failed');
+    res.status(500).json({ error: 'Failed to load profile' });
   }
 });
 
-// In server.js (or routes):
-router.put("/api/profile", verifyToken, async (req, res) => {
+router.put('/api/profile', verifyToken, async (req, res) => {
   try {
     const { firstName, lastName } = req.body;
     const u = await prisma.users.update({
       where: { firebaseUid: req.user.uid },
-      data: {
-        ...(firstName != null && { firstName }),
-        ...(lastName != null && { lastName }),
-      },
+      data: { ...(firstName != null && { firstName }), ...(lastName != null && { lastName }) },
       select: { id: true, firstName: true, lastName: true },
     });
-    res.json({
-      id: u.id.toString(),
-      firstName: u.firstName,
-      lastName: u.lastName,
-    });
+    logger.info({ uid: req.user?.uid }, 'Profile updated');
+    res.json({ id: u.id.toString(), firstName: u.firstName, lastName: u.lastName });
   } catch (e) {
-    console.error("PUT /api/profile failed", e);
-    res.status(500).json({ error: "Failed to update profile" });
+    logger.error({ err: e, uid: req.user?.uid }, 'PUT /api/profile failed');
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 
-// GET current user's owned devices
-router.get("/api/profile/devices", verifyToken, async (req, res) => {
+router.get('/api/profile/devices', verifyToken, async (req, res) => {
   try {
-    const user = await prisma.users.findUnique({
-      where: { firebaseUid: req.user.uid },
-      select: { id: true },
-    });
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    const user = await prisma.users.findUnique({ where: { firebaseUid: req.user.uid }, select: { id: true } });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'List owned devices unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const devs = await prisma.userDevices.findMany({
       where: { userId: user.id },
-      orderBy: { id: "asc" },
+      orderBy: { id: 'asc' },
       select: { id: true, name: true, mac: true },
     });
 
-    res.json(
-      devs.map((d) => ({ id: d.id.toString(), name: d.name, mac: d.mac }))
-    );
+    logger.info({ uid: req.user?.uid, count: devs.length }, 'Owned devices listed');
+    res.json(devs.map((d) => ({ id: d.id.toString(), name: d.name, mac: d.mac })));
   } catch (e) {
-    console.error("GET /api/profile/devices failed", e);
-    res.status(500).json({ error: "Failed to load devices" });
+    logger.error({ err: e, uid: req.user?.uid }, 'GET /api/profile/devices failed');
+    res.status(500).json({ error: 'Failed to load devices' });
   }
 });
 
-// POST create owned device
-router.post("/api/profile/devices", verifyToken, async (req, res) => {
+router.post('/api/profile/devices', verifyToken, async (req, res) => {
   try {
     const { name, mac } = req.body;
-    if (!name || !mac)
-      return res.status(400).json({ error: "name and mac required" });
+    if (!name || !mac) {
+      logger.warn({ uid: req.user?.uid }, 'Create owned device: missing fields');
+      return res.status(400).json({ error: 'name and mac required' });
+    }
 
-    const user = await prisma.users.findUnique({
-      where: { firebaseUid: req.user.uid },
-      select: { id: true },
-    });
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    const user = await prisma.users.findUnique({ where: { firebaseUid: req.user.uid }, select: { id: true } });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Create owned device unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const created = await prisma.userDevices.create({
       data: { name, mac, userId: user.id },
       select: { id: true, name: true, mac: true },
     });
 
-    res.json({
-      id: created.id.toString(),
-      name: created.name,
-      mac: created.mac,
-    });
+    logger.info({ uid: req.user?.uid, id: String(created.id) }, 'Owned device created');
+    res.json({ id: created.id.toString(), name: created.name, mac: created.mac });
   } catch (e) {
-    console.error("POST /api/profile/devices failed", e);
-    // Unique MACs will throw; reflect as 400 for UX
-    const msg = /Unique|unique/i.test(e.message)
-      ? "MAC already exists"
-      : "Failed to create device";
+    const msg = /Unique|unique/i.test(e.message) ? 'MAC already exists' : 'Failed to create device';
+    logger.error({ err: e, uid: req.user?.uid }, 'POST /api/profile/devices failed');
     res.status(400).json({ error: msg });
   }
 });
 
-// PUT update owned device (name/mac)
-router.put("/api/profile/devices/:id", verifyToken, async (req, res) => {
+router.put('/api/profile/devices/:id', verifyToken, async (req, res) => {
   try {
     const id = toBi(req.params.id);
     const { name, mac } = req.body;
 
-    const user = await prisma.users.findUnique({
-      where: { firebaseUid: req.user.uid },
-      select: { id: true },
-    });
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    const user = await prisma.users.findUnique({ where: { firebaseUid: req.user.uid }, select: { id: true } });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Update owned device unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const dev = await prisma.userDevices.findUnique({ where: { id } });
-    if (!dev) return res.status(404).json({ error: "Device not found" });
-    if (dev.userId !== user.id)
-      return res.status(403).json({ error: "Forbidden" });
+    if (!dev) {
+      logger.warn({ uid: req.user?.uid, id: req.params.id }, 'Update owned device not found');
+      return res.status(404).json({ error: 'Device not found' });
+    }
+    if (dev.userId !== user.id) {
+      logger.warn({ uid: req.user?.uid, id: req.params.id }, 'Update owned device forbidden: not owner');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
     const upd = await prisma.userDevices.update({
       where: { id },
-      data: {
-        ...(name != null && { name }),
-        ...(mac != null && { mac }),
-      },
+      data: { ...(name != null && { name }), ...(mac != null && { mac }) },
       select: { id: true, name: true, mac: true },
     });
 
+    logger.info({ uid: req.user?.uid, id: req.params.id }, 'Owned device updated');
     res.json({ id: upd.id.toString(), name: upd.name, mac: upd.mac });
   } catch (e) {
-    console.error("PUT /api/profile/devices/:id failed", e);
-    const msg = /Unique|unique/i.test(e.message)
-      ? "MAC already exists"
-      : "Failed to update device";
+    const msg = /Unique|unique/i.test(e.message) ? 'MAC already exists' : 'Failed to update device';
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'PUT /api/profile/devices/:id failed');
     res.status(400).json({ error: msg });
   }
 });
 
-// DELETE owned device
-router.delete("/api/profile/devices/:id", verifyToken, async (req, res) => {
+router.delete('/api/profile/devices/:id', verifyToken, async (req, res) => {
   try {
     const id = toBi(req.params.id);
 
-    const user = await prisma.users.findUnique({
-      where: { firebaseUid: req.user.uid },
-      select: { id: true },
-    });
-    if (!user) return res.status(403).json({ error: "Unauthorized" });
+    const user = await prisma.users.findUnique({ where: { firebaseUid: req.user.uid }, select: { id: true } });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Delete owned device unauthorized');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const dev = await prisma.userDevices.findUnique({ where: { id } });
-    if (!dev) return res.status(404).json({ error: "Device not found" });
-    if (dev.userId !== user.id)
-      return res.status(403).json({ error: "Forbidden" });
+    if (!dev) {
+      logger.warn({ uid: req.user?.uid, id: req.params.id }, 'Delete owned device not found');
+      return res.status(404).json({ error: 'Device not found' });
+    }
+    if (dev.userId !== user.id) {
+      logger.warn({ uid: req.user?.uid, id: req.params.id }, 'Delete owned device forbidden: not owner');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
     await prisma.userDevices.delete({ where: { id } });
+    logger.warn({ uid: req.user?.uid, id: req.params.id }, 'Owned device deleted');
     res.json({ ok: true });
   } catch (e) {
-    console.error("DELETE /api/profile/devices/:id failed", e);
-    res.status(500).json({ error: "Failed to delete device" });
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'DELETE /api/profile/devices/:id failed');
+    res.status(500).json({ error: 'Failed to delete device' });
   }
 });
 
-// List roles for dropdown
-router.get("/api/admin/roles", verifyToken, async (req, res) => {
+// Roles
+router.get('/api/admin/roles', verifyToken, async (req, res) => {
   try {
-    const roles = await prisma.roles.findMany({ orderBy: { id: "asc" } });
+    const roles = await prisma.roles.findMany({ orderBy: { id: 'asc' } });
+    logger.info({ uid: req.user?.uid, count: roles.length }, 'Roles listed');
     res.json(roles.map((r) => ({ id: r.id.toString(), name: r.name })));
   } catch (e) {
-    res.status(500).json({ error: "Failed to list roles" });
+    logger.error({ err: e, uid: req.user?.uid }, 'List roles failed');
+    res.status(500).json({ error: 'Failed to list roles' });
   }
 });
 
-// List pending users (role = "Pending User")
-router.get("/api/admin/pending-users", verifyToken, async (req, res) => {
+// Pending users
+router.get('/api/admin/pending-users', verifyToken, async (req, res) => {
   try {
-    // Authorization: Allow only Owner
-    const me = await prisma.users.findUnique({
-      where: { firebaseUid: req.user.uid },
-      include: { role: true },
-    });
-    if (!me || me.role?.name !== "Owner")
-      return res.status(403).json({ error: "Forbidden" });
+    const me = await prisma.users.findUnique({ where: { firebaseUid: req.user.uid }, include: { role: true } });
+    if (!me || me.role?.name !== 'Owner') {
+      logger.warn({ uid: req.user?.uid, role: me?.role?.name }, 'List pending users forbidden');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
-    const pendingRole = await prisma.roles.findFirst({
-      where: { name: "Pending User" },
-    });
-    if (!pendingRole) return res.json([]);
+    const pendingRole = await prisma.roles.findFirst({ where: { name: 'Pending User' } });
+    if (!pendingRole) {
+      logger.info({ uid: req.user?.uid }, 'Pending users: no role found, empty');
+      return res.json([]);
+    }
 
     const users = await prisma.users.findMany({
       where: { roleId: pendingRole.id },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: 'asc' },
       select: { id: true, email: true, createdAt: true },
     });
-    res.json(
-      users.map((u) => ({
-        id: u.id.toString(),
-        email: u.email,
-        createdAt: u.createdAt,
-      }))
-    );
+
+    logger.info({ uid: req.user?.uid, count: users.length }, 'Pending users listed');
+    res.json(users.map((u) => ({ id: u.id.toString(), email: u.email, createdAt: u.createdAt })));
   } catch (e) {
-    res.status(500).json({ error: "Failed to list pending users" });
+    logger.error({ err: e, uid: req.user?.uid }, 'List pending users failed');
+    res.status(500).json({ error: 'Failed to list pending users' });
   }
 });
 
-// Assign role + group to a pending user
-// REPLACE-ALL: assign role and replace groups set with groupIds[]
-router.post(
-  "/api/admin/pending-users/:id/assign",
-  verifyToken,
-  async (req, res) => {
-    try {
-      // const owner = await ensureOwner(req, prisma);
-      // if (!owner) return res.status(403).json({ error: 'Forbidden' });
+router.post('/api/admin/pending-users/:id/assign', verifyToken, async (req, res) => {
+  try {
+    const userId = toBi(req.params.id);
+    const { roleId, groupIds } = req.body || {};
 
-      const userId = toBi(req.params.id);
-      const { roleId, groupIds } = req.body || {};
-
-      if (!roleId || !Array.isArray(groupIds) || groupIds.length === 0) {
-        return res
-          .status(400)
-          .json({ error: "roleId and groupIds[] are required" });
-      }
-
-      // Validate user
-      const user = await prisma.users.findUnique({ where: { id: userId } });
-      if (!user) return res.status(404).json({ error: "User not found" });
-
-      // Assign role
-      await prisma.users.update({
-        where: { id: userId },
-        data: { roleId: toBi(roleId) },
-      });
-
-      // Replace group memberships
-      await prisma.$transaction([
-        prisma.userGroups.deleteMany({ where: { userId } }),
-        prisma.userGroups.createMany({
-          data: groupIds.map((gid) => ({ userId, groupId: toBi(gid) })),
-          skipDuplicates: true, // Prisma 4.4+ supports this
-        }),
-      ]);
-
-      res.json({ ok: true });
-    } catch (e) {
-      console.error(
-        "POST /api/admin/pending-users/:id/assign replace-all failed",
-        e
-      );
-      res.status(400).json({ error: "Failed to assign" });
+    if (!roleId || !Array.isArray(groupIds) || groupIds.length === 0) {
+      logger.warn({ uid: req.user?.uid }, 'Assign pending user: missing roleId/groupIds');
+      return res.status(400).json({ error: 'roleId and groupIds[] are required' });
     }
-  }
-);
 
-router.delete("/api/profile", verifyToken, async (req, res) => {
+    const user = await prisma.users.findUnique({ where: { id: userId } });
+    if (!user) {
+      logger.warn({ uid: req.user?.uid, id: req.params.id }, 'Assign pending user: user not found');
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    await prisma.users.update({ where: { id: userId }, data: { roleId: toBi(roleId) } });
+    await prisma.$transaction([
+      prisma.userGroups.deleteMany({ where: { userId } }),
+      prisma.userGroups.createMany({ data: groupIds.map((gid) => ({ userId, groupId: toBi(gid) })), skipDuplicates: true }),
+    ]);
+
+    logger.info({ uid: req.user?.uid, id: req.params.id, roleId, groups: groupIds.map(String) }, 'Pending user assigned');
+    res.json({ ok: true });
+  } catch (e) {
+    logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'Assign pending user failed');
+    res.status(400).json({ error: 'Failed to assign' });
+  }
+});
+
+// Account deletion
+router.delete('/api/profile', verifyToken, async (req, res) => {
   const firebaseUid = req.user?.uid;
   if (!firebaseUid) {
-    return res.status(403).json({ error: "Unauthorized" });
+    logger.warn('Delete profile unauthorized: missing uid');
+    return res.status(403).json({ error: 'Unauthorized' });
   }
 
   try {
-    // Find the app user by Firebase UID
-    const user = await prisma.users.findUnique({
-      where: { firebaseUid },
-      select: { id: true, firebaseUid: true },
-    });
+    const user = await prisma.users.findUnique({ where: { firebaseUid }, select: { id: true, firebaseUid: true } });
+
     if (!user) {
-      // If app user not found, still attempt to delete Firebase user
-      try {
-        await admin.auth().deleteUser(firebaseUid);
-      } catch {}
-      res.clearCookie("access_token");
+      try { await admin.auth().deleteUser(firebaseUid); } catch {}
+      logger.warn({ uid: firebaseUid }, 'Delete profile: user not found in DB, deleted Firebase account if existed');
+      res.clearCookie('access_token');
       return res.json({ ok: true });
     }
 
-    // Transaction to delete related data first, then the user
     await prisma.$transaction(async (tx) => {
-      // 1) Remove from UserGroups
       await tx.userGroups.deleteMany({ where: { userId: user.id } });
-
-      // 2) Remove UserDevices
       await tx.userDevices.deleteMany({ where: { userId: user.id } });
-
-      // 3) If you have more relations tied to Users, delete them here in the right order
-
-      // 4) Finally delete the Users row
       await tx.users.delete({ where: { id: user.id } });
     });
 
-    // Delete Firebase account after DB transaction succeeds
     await admin.auth().deleteUser(firebaseUid);
 
-    // Clear session cookie
-    res.clearCookie("access_token");
+    logger.warn({ uid: firebaseUid }, 'Account deleted');
+    res.clearCookie('access_token');
     return res.json({ ok: true });
   } catch (e) {
-    console.error("Delete profile failed", e);
-    return res.status(500).json({ error: "Failed to delete account" });
+    logger.error({ err: e, uid: firebaseUid }, 'Delete profile failed');
+    return res.status(500).json({ error: 'Failed to delete account' });
   }
 });
 

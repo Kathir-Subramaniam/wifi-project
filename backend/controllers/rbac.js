@@ -1,108 +1,111 @@
-// controllers/rbac.js
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const logger = require('../utils/logger');
 
-// Role names expected in Roles.name
 const ROLES = {
   OWNER: 'Owner',
   ORG_ADMIN: 'Organization Admin',
   SITE_ADMIN: 'Site Admin',
 };
 
-// Load the app user and role based on Firebase UID carried in req.user (set by verifyToken)
 async function getAppUser(req) {
-  const firebaseUid = req.user?.uid; // set by verifyToken (Firebase Admin)
-  if (!firebaseUid) return null;
-  return prisma.users.findUnique({
+  const firebaseUid = req.user?.uid;
+  if (!firebaseUid) {
+    logger.warn({ path: req.originalUrl }, 'getAppUser called without uid');
+    return null;
+  }
+  const user = await prisma.users.findUnique({
     where: { firebaseUid },
-    include: {
-      role: true,
-      userGroups: { include: { group: true } },
-    },
+    include: { role: true, userGroups: { include: { group: true } } },
   });
+  logger.debug({ uid: firebaseUid, role: user?.role?.name, groups: (user?.userGroups || []).length }, 'Loaded app user');
+  return user;
 }
 
-// Check if user has role name
 function hasRole(user, roleName) {
-  return user?.role?.name === roleName;
+  const match = user?.role?.name === roleName;
+  logger.debug({ uid: user?.firebaseUid, expected: roleName, actual: user?.role?.name, match }, 'hasRole check');
+  return match;
 }
 
-/**
- * Building-level manage check
- * - Owner: can manage all buildings
- * - Org Admin: can manage buildings explicitly granted via GlobalPermissions (by their groups)
- * - Site Admin: same building-level rule (requires explicit building GP)
- */
 async function canManageBuilding(user, buildingId) {
-  if (!user) return false;
-  if (hasRole(user, ROLES.OWNER)) return true;
+  if (!user) {
+    logger.warn({ buildingId }, 'canManageBuilding: no user');
+    return false;
+  }
+  if (hasRole(user, ROLES.OWNER)) {
+    logger.debug({ uid: user.firebaseUid, buildingId }, 'Owner can manage building');
+    return true;
+  }
 
   const biBuildingId = BigInt(String(buildingId));
   const groupIds = (user.userGroups || []).map(ug => ug.groupId);
-  if (groupIds.length === 0) return false;
+  if (groupIds.length === 0) {
+    logger.debug({ uid: user.firebaseUid, buildingId }, 'No groups; cannot manage building');
+    return false;
+  }
 
   if (hasRole(user, ROLES.ORG_ADMIN) || hasRole(user, ROLES.SITE_ADMIN)) {
     const gp = await prisma.globalPermissions.findFirst({
       where: { buildingId: biBuildingId, groupId: { in: groupIds } },
       select: { id: true },
     });
-    return !!gp;
+    const allowed = !!gp;
+    logger.debug({ uid: user.firebaseUid, buildingId, allowed }, 'canManageBuilding decision');
+    return allowed;
   }
 
+  logger.debug({ uid: user.firebaseUid, buildingId }, 'Role not allowed for building management');
   return false;
 }
 
-/**
- * Floor-level manage check (STRICT floor-only for Org Admin)
- * - Owner: can manage all floors
- * - Org Admin: can manage a floor only if there is a direct GlobalPermissions entry for that floorId (no building inheritance)
- * - Site Admin: (current behavior) may manage floors if their groups have building-level GP; change to strict floor-only if desired
- */
 async function canManageFloor(user, floorId) {
-  if (!user) return false;
-  if (hasRole(user, ROLES.OWNER)) return true;
+  if (!user) {
+    logger.warn({ floorId }, 'canManageFloor: no user');
+    return false;
+  }
+  if (hasRole(user, ROLES.OWNER)) {
+    logger.debug({ uid: user.firebaseUid, floorId }, 'Owner can manage floor');
+    return true;
+  }
 
   const floor = await prisma.floors.findUnique({
     where: { id: BigInt(String(floorId)) },
     select: { id: true, buildingId: true },
   });
-  if (!floor) return false;
+  if (!floor) {
+    logger.debug({ uid: user.firebaseUid, floorId }, 'Floor not found; cannot manage');
+    return false;
+  }
 
   const groupIds = (user.userGroups || []).map(ug => ug.groupId);
-  if (groupIds.length === 0) return false;
+  if (groupIds.length === 0) {
+    logger.debug({ uid: user.firebaseUid, floorId }, 'No groups; cannot manage floor');
+    return false;
+  }
 
-  // Org Admin: STRICT floor-only (must have direct GP for this floor)
   if (hasRole(user, ROLES.ORG_ADMIN)) {
     const gp = await prisma.globalPermissions.findFirst({
-      where: {
-        floorId: floor.id,         // only direct floor grants
-        groupId: { in: groupIds },
-      },
+      where: { floorId: floor.id, groupId: { in: groupIds } },
       select: { id: true },
     });
-    return !!gp;
+    const allowed = !!gp;
+    logger.debug({ uid: user.firebaseUid, floorId, allowed, rule: 'strict-floor' }, 'canManageFloor decision');
+    return allowed;
   }
 
-  // Site Admin: current rule uses building-level GP
-  // To make Site Admin also strict floor-only, replace buildingId check with floorId (like Org Admin above).
   if (hasRole(user, ROLES.SITE_ADMIN)) {
     const gp = await prisma.globalPermissions.findFirst({
-      where: {
-        buildingId: floor.buildingId, // current behavior: via building GP
-        groupId: { in: groupIds },
-      },
+      where: { buildingId: floor.buildingId, groupId: { in: groupIds } },
       select: { id: true },
     });
-    return !!gp;
+    const allowed = !!gp;
+    logger.debug({ uid: user.firebaseUid, floorId, allowed, viaBuildingId: String(floor.buildingId) }, 'canManageFloor (site admin via building) decision');
+    return allowed;
   }
 
+  logger.debug({ uid: user.firebaseUid, floorId }, 'Role not allowed for floor management');
   return false;
 }
 
-module.exports = {
-  ROLES,
-  getAppUser,
-  hasRole,
-  canManageBuilding,
-  canManageFloor,
-};
+module.exports = { ROLES, getAppUser, hasRole, canManageBuilding, canManageFloor };
