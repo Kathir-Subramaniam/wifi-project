@@ -147,7 +147,7 @@ app.get("/api/floors", verifyToken, async (req, res) => {
         },
         orderBy: { id: "asc" },
       });
-    } else if (role === "Organization Admin" || role === "Site Admin") {
+    } else if (role === "Organization Admin" || role === "Site Admin" || role ==="Viewer") {
       const groupIds = (user.userGroups || []).map((ug) => ug.groupId);
       if (groupIds.length === 0) return res.json([]);
 
