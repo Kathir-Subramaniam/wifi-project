@@ -6,6 +6,7 @@ const { PrismaClient } = require('@prisma/client');
 const { v4: uuid } = require('uuid');
 const pinoHttp = require('pino-http');
 const logger = require('../utils/logger');
+const helmet = require('helmet');
 
 const prisma = new PrismaClient({
   log: process.env.NODE_ENV === 'development'
@@ -46,6 +47,69 @@ app.use(pinoHttp({
     return 'info';
   },
 }));
+
+app.use(helmet({
+  hidePoweredBy: true,
+
+  dnsPrefetchControl: { allow: false },
+
+  ieNoOpen: true,
+
+  noSniff: true,
+
+  frameguard: { action: 'sameorigin' },
+
+  xssFilter: true,
+
+  hsts: process.env.NODE_ENV === 'production' ? {
+    maxAge: 15552000, // 180 days
+    includeSubDomains: false,
+    preload: false
+  } : false,
+
+  crossOriginOpenerPolicy: { policy: 'same-origin' },
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      'default-src': ["'self'"],
+      'base-uri': ["'self'"],
+      'form-action': ["'self'"],
+
+      'connect-src': [
+        "'self'",
+        "http://localhost:3000",
+        "http://localhost:5173"
+      ],
+
+      'img-src': [
+        "'self'",
+        "data:",
+        "blob:"
+      ],
+
+      'style-src': [
+        "'self'"
+      ],
+
+      'script-src': [
+        "'self'"
+      ],
+
+      'font-src': [
+        "'self'",
+        "data:"
+      ],
+
+      'object-src': ["'none'"],
+
+      'frame-src': ["'self'"]
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
+
 
 // CORS, parsers
 app.use(cors({
