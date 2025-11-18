@@ -99,7 +99,7 @@ export default function ZoomableMap({ children, viewBox = { w: 1355, h: 1016 }, 
 
   return (
     <div
-      class="map-box"
+      className="map-box"
       style={{
         width: '100%',
         position: 'relative',

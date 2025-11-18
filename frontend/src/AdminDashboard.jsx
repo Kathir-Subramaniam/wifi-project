@@ -298,7 +298,7 @@ export default function AdminDashboard() {
   const onLogout = async () => {
     try {
       await api('/api/logout', { method: 'POST' });
-      window.location.href = '/auth';
+      window.location.href = '/';
     } catch { }
   };
   const displayName = `${profile?.user?.firstName || ''} ${profile?.user?.lastName || ''}`.trim();
