@@ -80,8 +80,10 @@ app.use(helmet({
 
       'connect-src': [
         "'self'",
-        "http://localhost:3000",
-        "http://localhost:5173"
+        // "http://localhost:3000",
+        // "http://localhost:5173",
+        process.env.FRONTEND_ORIGIN, 
+        "floor-track-backend.onrender.com"
       ],
 
       'img-src': [
@@ -114,7 +116,7 @@ app.use(helmet({
 
 // CORS, parsers
 app.use(cors({
-  origin: ['http://localhost:5173'],
+  origin: [process.env.FRONTEND_ORIGIN || 'http://localhost:5173'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],

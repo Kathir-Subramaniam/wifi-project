@@ -77,8 +77,8 @@ class FirebaseAuthController {
           res.cookie("access_token", idToken, {
             httpOnly: true,
             sameSite: isProd ? "lax" : "lax",
-            secure: isProd, // only over HTTPS in production
-            // maxAge: 60 * 60 * 1000 // optional: 1 hour
+            secure: isProd,
+            // maxAge: 60 * 60 * 1000
           });
           logger.info(
             { uid: userCredential.user.uid, email },

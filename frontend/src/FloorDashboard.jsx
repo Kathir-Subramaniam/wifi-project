@@ -10,7 +10,7 @@ import occupancyImg from './assets/occupancy.svg';
 import activeAPImg from './assets/activeAP.svg';
 import floorStatusImg from './assets/floorStatus.svg';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
 async function api(path, opts = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
