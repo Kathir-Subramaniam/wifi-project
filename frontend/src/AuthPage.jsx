@@ -59,7 +59,9 @@ export default function AuthPage({ onAuthed }) {
       if (mode === 'login') {
         await postJSON('/api/login', { email, password });
         setMessage('Logged in successfully.');
-        onAuthed?.(); // navigate to dashboard
+        setTimeout(() => {
+          onAuthed?.();
+        }, 150);
       } else if (mode === 'signup') {
         await postJSON('/api/register', { email, password, firstName: firstName.trim(), lastName: lastName.trim() });
         setMessage('Account created successfully!');
@@ -89,7 +91,7 @@ export default function AuthPage({ onAuthed }) {
             <div className="auth-title-accent"></div>
           </div>
           <p className="auth-subtitle">
-            {mode === 'login' 
+            {mode === 'login'
               ? 'Access your network dashboard'
               : 'Join the FloorTrack community'
             }
@@ -107,13 +109,13 @@ export default function AuthPage({ onAuthed }) {
 
           {/* Enhanced Tab Navigation */}
           <div className="auth-tabs">
-            <button 
+            <button
               className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
               onClick={() => setMode('login')}
             >
               Login
             </button>
-            <button 
+            <button
               className={`auth-tab ${mode === 'signup' ? 'active' : ''}`}
               onClick={() => setMode('signup')}
             >
