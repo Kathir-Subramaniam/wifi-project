@@ -76,7 +76,7 @@ class FirebaseAuthController {
         if (idToken) {
           res.cookie("access_token", idToken, {
             httpOnly: true,
-            sameSite: isProd ? "lax" : "lax",
+            sameSite: "nome",
             secure: isProd,
             // maxAge: 60 * 60 * 1000
           });
