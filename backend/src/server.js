@@ -90,7 +90,7 @@ app.use(
           // "http://localhost:3000",
           // "http://localhost:5173",
           process.env.FRONTEND_ORIGIN,
-          "floor-track-backend.onrender.com",
+          "https://floor-track-backend.onrender.com",
           "https://securetoken.googleapis.com",
           "https://identitytoolkit.googleapis.com",
         ],
