@@ -155,17 +155,54 @@ router.get('/api/admin/global-permissions', verifyToken, async (req, res) => {
 
 router.post('/api/admin/global-permissions', verifyToken, async (req, res) => {
   try {
-    const { groupId, buildingId, floorId } = req.body;
+    const user = await getAppUser(req);
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Create GP unauthorized');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const roleName = user?.role?.name || '';
+
+    const { groupId, buildingId, floorId } = req.body || {};
     if (!groupId || !buildingId || !floorId) {
       logger.warn({ uid: req.user?.uid }, 'Create GP: missing fields');
       return res.status(400).json({ error: 'groupId, buildingId, floorId required' });
     }
+
+    const [group, building, floor] = await Promise.all([
+      prisma.groups.findUnique({ where: { id: toBi(groupId) }, select: { id: true, name: true } }),
+      prisma.buildings.findUnique({ where: { id: toBi(buildingId) }, select: { id: true, name: true } }),
+      prisma.floors.findUnique({ where: { id: toBi(floorId) }, select: { id: true, name: true, buildingId: true } }),
+    ]);
+    if (!group || !building || !floor || String(floor.buildingId) !== String(toBi(buildingId))) {
+      logger.warn({ uid: req.user?.uid, groupId, buildingId, floorId }, 'Create GP: invalid FK or mismatched building-floor');
+      return res.status(400).json({ error: 'Invalid groupId/buildingId/floorId (or floor not in building)' });
+    }
+
+    if (roleName === 'Owner') {
+      // Owner is authorized
+    } else if (roleName === 'Organization Admin') {
+      const myGroupIds = (user.userGroups || []).map(ug => String(ug.groupId));
+      if (!myGroupIds.includes(String(toBi(groupId)))) {
+        logger.warn({ uid: req.user?.uid, role: roleName, groupId }, 'Create GP forbidden: group not in org admin scope');
+        return res.status(403).json({ error: 'Forbidden: group is not in your scope' });
+      }
+      
+    } else {
+      logger.warn({ uid: req.user?.uid, role: roleName }, 'Create GP forbidden: role not allowed');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const created = await prisma.globalPermissions.create({
-      data: { groupId: toBi(groupId), buildingId: toBi(buildingId), floorId: toBi(floorId) },
+      data: {
+        groupId: toBi(groupId),
+        buildingId: toBi(buildingId),
+        floorId: toBi(floorId),
+      },
       include: { group: true, building: true, floor: true },
     });
+
     logger.info({ uid: req.user?.uid, id: String(created.id) }, 'GlobalPermission created');
-    res.json({
+    return res.json({
       id: created.id.toString(),
       groupId: created.groupId.toString(),
       groupName: created.group?.name || null,
@@ -176,21 +213,89 @@ router.post('/api/admin/global-permissions', verifyToken, async (req, res) => {
     });
   } catch (e) {
     logger.error({ err: e, uid: req.user?.uid }, 'Create GlobalPermission failed');
-    res.status(500).json({ error: 'Failed to create global permission' });
+    return res.status(500).json({ error: 'Failed to create global permission' });
   }
 });
 
 router.delete('/api/admin/global-permissions/:id', verifyToken, async (req, res) => {
   try {
-    const id = BigInt(req.params.id);
+    const user = await getAppUser(req);
+    if (!user) {
+      logger.warn({ uid: req.user?.uid }, 'Delete GP unauthorized');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const roleName = user?.role?.name || '';
+    const id = toBi(req.params.id);
+
+    const existing = await prisma.globalPermissions.findUnique({
+      where: { id },
+      select: { id: true, groupId: true },
+    });
+    if (!existing) {
+      logger.warn({ uid: req.user?.uid, id: String(id) }, 'Delete GP: not found');
+      return res.status(404).json({ error: 'GlobalPermission not found' });
+    }
+
+    if (roleName === 'Owner') {
+      // Owner Authorized
+    } else if (roleName === 'Organization Admin') {
+      const myGroupIds = (user.userGroups || []).map(ug => String(ug.groupId));
+      if (!myGroupIds.includes(String(existing.groupId))) {
+        logger.warn({ uid: req.user?.uid, role: roleName, gpGroupId: String(existing.groupId) }, 'Delete GP forbidden: group not in org admin scope');
+        return res.status(403).json({ error: 'Forbidden: GlobalPermission group is not in your scope' });
+      }
+    } else {
+      logger.warn({ uid: req.user?.uid, role: roleName }, 'Delete GP forbidden: role not allowed');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     await prisma.globalPermissions.delete({ where: { id } });
-    logger.warn({ uid: req.user?.uid, id: String(id) }, 'GlobalPermission deleted');
-    res.json({ ok: true });
+    logger.info({ uid: req.user?.uid, id: String(id) }, 'GlobalPermission deleted');
+    return res.json({ ok: true });
   } catch (e) {
     logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'Delete GlobalPermission failed');
-    res.status(500).json({ error: 'Failed to delete global permission' });
+    return res.status(500).json({ error: 'Failed to delete global permission' });
   }
 });
+
+// router.post('/api/admin/global-permissions', verifyToken, async (req, res) => {
+//   try {
+//     const { groupId, buildingId, floorId } = req.body;
+//     if (!groupId || !buildingId || !floorId) {
+//       logger.warn({ uid: req.user?.uid }, 'Create GP: missing fields');
+//       return res.status(400).json({ error: 'groupId, buildingId, floorId required' });
+//     }
+//     const created = await prisma.globalPermissions.create({
+//       data: { groupId: toBi(groupId), buildingId: toBi(buildingId), floorId: toBi(floorId) },
+//       include: { group: true, building: true, floor: true },
+//     });
+//     logger.info({ uid: req.user?.uid, id: String(created.id) }, 'GlobalPermission created');
+//     res.json({
+//       id: created.id.toString(),
+//       groupId: created.groupId.toString(),
+//       groupName: created.group?.name || null,
+//       buildingId: created.buildingId.toString(),
+//       buildingName: created.building?.name || null,
+//       floorId: created.floorId.toString(),
+//       floorName: created.floor?.name || null,
+//     });
+//   } catch (e) {
+//     logger.error({ err: e, uid: req.user?.uid }, 'Create GlobalPermission failed');
+//     res.status(500).json({ error: 'Failed to create global permission' });
+//   }
+// });
+
+// router.delete('/api/admin/global-permissions/:id', verifyToken, async (req, res) => {
+//   try {
+//     const id = BigInt(req.params.id);
+//     await prisma.globalPermissions.delete({ where: { id } });
+//     logger.warn({ uid: req.user?.uid, id: String(id) }, 'GlobalPermission deleted');
+//     res.json({ ok: true });
+//   } catch (e) {
+//     logger.error({ err: e, uid: req.user?.uid, id: req.params.id }, 'Delete GlobalPermission failed');
+//     res.status(500).json({ error: 'Failed to delete global permission' });
+//   }
+// });
 
 // Buildings
 router.get('/api/admin/buildings', verifyToken, async (req, res) => {
