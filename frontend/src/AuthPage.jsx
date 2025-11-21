@@ -60,7 +60,6 @@ export default function AuthPage({ onAuthed }) {
         await postJSON('/api/login', { email, password });
         setMessage('Logged in successfully.');
         setTimeout(() => {
-          // Hard navigation is the most reliable for iOS
           window.location.href = '/home';
         }, 250);
       } else if (mode === 'signup') {

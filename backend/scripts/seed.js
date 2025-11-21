@@ -571,7 +571,6 @@ async function main() {
     totalClients += count;
   }
 
-  // Add a light client load on Annex APs too (already covered by the loop, but keep message for clarity)
   console.log(`  Created ~${totalClients} clients total across ${allAps.length} APs.`);
 
   console.log("\n=== Access Expectations ===");

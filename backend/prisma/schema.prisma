@@ -55,7 +55,6 @@ model Users {
   updatedAt   DateTime @updatedAt
   roleId BigInt
   role   Roles  @relation(fields: [roleId], references: [id])
-  // Note: we typically avoid cascading delete on roles -> users to prevent accidental mass deletions.
   userDevices UserDevices[]
   userGroups  UserGroups[]
   @@map("Users")

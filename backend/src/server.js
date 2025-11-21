@@ -127,7 +127,6 @@ app.use(cookieParser());
 
 app.use(apiLimiter);
 
-// Mount routes.js (those handlers should also switch to logger.* internally)
 app.use(router);
 
 // Public minimal endpoints

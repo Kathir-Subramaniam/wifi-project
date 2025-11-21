@@ -73,7 +73,7 @@ export default function FloorDashboard() {
   const displayName = `${profile?.user?.firstName || ''} ${profile?.user?.lastName || ''}`.trim();
 
 
-  // 1) Fetch floors list with building names (dynamic options)
+  // 1) Fetch floors list with building names
   useEffect(() => {
     async function fetchFloors() {
       try {
