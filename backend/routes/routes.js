@@ -121,6 +121,7 @@ router.get('/api/admin/global-permissions', verifyToken, async (req, res) => {
         floorName: rec.floor?.name || null,
       })));
     }
+  
 
     if (roleName === 'Organization Admin') {
       const myGroupIds = (user.userGroups || []).map(ug => ug.groupId);

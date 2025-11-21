@@ -10,6 +10,7 @@ function AuthRoute() {
   return <AuthPage onAuthed={() => navigate('/home')} />;
 }
 
+
 export default function App() {
   return (
     <BrowserRouter>
