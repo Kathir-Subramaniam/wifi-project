@@ -155,7 +155,7 @@ npm install
 
 Create a `.env` file in the backend directory:
 ```env
-NODE_ENV=development
+NODE_ENV="development"
 PORT=3000
 
 # Database (Supabase-compatible Postgres)
@@ -172,23 +172,19 @@ FIREBASE_PROJECT_ID=...
 FIREBASE_STORAGE_BUCKET=...
 FIREBASE_MESSAGING_SENDER_ID=...
 FIREBASE_APP_ID=...
+
+# Firebase Admin (service account JSON as a single string)
+FIREBASE_SERVICE_ACCOUNT={"type":"service_account","project_id":"...","private_key_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","client_email":"...","client_id":"...", "auth_uri":"...","token_uri":"...","auth_provider_x509_cert_url":"...","client_x509_cert_url":"..."}
 ```
 
-3. Firebase Admin credentials
-
-- Place your Firebase Admin service account JSON at `backend/FirebaseService.json`.
-- Ensure `backend/FirebaseService.json` is listed in `.gitignore`.
-
-> Never commit `FirebaseService.json`. Store it locally for development and use Render/host secrets in production.
-
-4. Initialize the database (Prisma)
+3. Initialize the database (Prisma)
 ```bash
 # From backend directory
 npx prisma migrate dev
 npx prisma generate
 ```
 
-5. Seed initial roles (required)
+4. Seed initial roles (required)
 
 The backend logic expects a `Pending User` role and uses role-based access control. Create roles manually using SQL (Supabase SQL editor or psql):
 ```sql
@@ -201,7 +197,7 @@ INSERT INTO "Roles" (id, name) VALUES
 ON CONFLICT DO NOTHING;
 ```
 
-6. Start the backend
+5. Start the backend
 ```bash
 # From backend directory
 node src/server.js
@@ -209,26 +205,26 @@ node src/server.js
 npx nodemon src/server.js
 ```
 
-7. Frontend environment variables
+6. Frontend environment variables
 
 Create a `.env` file in the frontend directory:
 ```env
 VITE_API_BASE=http://localhost:3000
 ```
 
-8. Start the frontend
+7. Start the frontend
 ```bash
 # From frontend directory
 npm run dev
 # Default dev server at http://localhost:5173
 ```
 
-9. First-run flow
+8. First-run flow
 - Register a user via the frontend. The backend expects `firstName`, `lastName`, `email`, `password` when calling `/api/register`.
 - Log in via `/api/login`. The backend sets an httpOnly cookie `access_token` with your Firebase ID token.
 - To grant yourself Owner access, update your user’s role in the database:
 ```sql
-UPDATE "Users" SET roleId = 1 WHERE email = 'your.email@example.com';
+UPDATE "Users" SET "roleId" = 1 WHERE email = 'your.email@example.com';
 ```
 - As Owner, you can use the Admin dashboard to create Buildings, Floors (upload or paste SVG), APs, Devices, Groups, and Global Permissions.
 
@@ -284,9 +280,9 @@ npx prisma generate
 
 ```
 
-1.  Set your backend environment variables (DATABASE_URL, DIRECT_URL, Firebase variables, etc.) in .env as described in your setup section.
+2.  Set your backend environment variables (DATABASE_URL, DIRECT_URL, Firebase variables, etc.) in .env as described in your setup section.
 
-2.  Run the seed script:
+3.  Run the seed script:
 
 ```bash
 
@@ -296,7 +292,7 @@ node scripts/seed.js
 
 ```
 
-3.  Verify results:
+4.  Verify results:
 
 -   Roles table contains the 5 baseline roles (Owner, Organization Admin, Site Admin, Viewer, Pending User).
 -   Admin Dashboard shows your seeded Buildings/Floors/APs/Devices/Groups.
