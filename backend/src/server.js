@@ -702,7 +702,7 @@ app.get("/api/users/:userId/ap-connection", verifyToken, async (req, res) => {
 
     const devices = await prisma.userDevices.findMany({
       where: { userId },
-      select: { mac: true },
+      select: { mac: true, name: true },
       orderBy: { id: "asc" },
     });
 
@@ -719,7 +719,7 @@ app.get("/api/users/:userId/ap-connection", verifyToken, async (req, res) => {
     const results = [];
     for (const d of devices) {
       const normalizedMac = d.mac.trim().toLowerCase();
-
+      const normalizedDeviceName = d.name.trim().toLocaleLowerCase();
       const client = await prisma.clients.findFirst({
         where: { mac: { equals: normalizedMac, mode: "insensitive" } },
         orderBy: { updatedAt: "desc" },
@@ -732,6 +732,7 @@ app.get("/api/users/:userId/ap-connection", verifyToken, async (req, res) => {
 
       results.push({
         mac: normalizedMac,
+        name: normalizedDeviceName,
         ap: client?.ap
           ? {
               id: client.ap.id.toString(),

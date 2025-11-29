@@ -333,7 +333,7 @@ export default function FloorDashboard() {
                 <div key={i} className="ft-stat-card" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'grid', gap: 4 }}>
                     <div style={{ fontWeight: 700 }}>
-                      {c.mac?.toUpperCase?.() || '(unknown MAC)'}
+                      {c.name?.toUpperCase?.() || '(unknown MAC)'} - {c.mac?.toUpperCase?.() || '(unknown MAC)'}
                     </div>
                     {c.ap ? (
                       <div className="ft-legend-sub">
