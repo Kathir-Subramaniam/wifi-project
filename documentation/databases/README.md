@@ -101,6 +101,62 @@ Performance & Optimization
 
     -   Memoized AP overlays, pointer-event optimizations, and zoom/pan calculus done client-side for smooth maps.
 
+-   **Query Optimisation & Indexing**
+    -  In the schema, **Prisma automatically created indexes** for all fields marked as **unique**.
+    This allows the database to perform **index scans** instead of **sequential scans**, significantly improving query performance.
+
+
+* * * * *
+
+### 🧩 Indexes Created Automatically by Prisma
+
+| **Index Name** | **Description** |
+| --- | --- |
+| _prisma_migrations_pkey | Primary key for Prisma migrations |
+| APs_name_key, APs_pkey | Unique name index and primary key for APs |
+| Buildings_pkey | Primary key for Buildings |
+| Clients_mac_key, Clients_pkey | Unique constraint on mac and primary key for Clients |
+| Floors_name_key, Floors_pkey | Unique name index and primary key for Floors |
+| GlobalPermissions_pkey | Primary key for GlobalPermissions |
+| Groups_name_key, Groups_pkey | Unique name index and primary key for Groups |
+| Roles_pkey | Primary key for Roles |
+| UserDevices_mac_key, UserDevices_pkey | Unique mac index and primary key for UserDevices |
+| UserGroups_pkey | Primary key for UserGroups |
+| Users_email_key, Users_firebaseUid_key, Users_pkey | Unique indexes on email and firebaseUid, and primary key for Users |
+
+* * * * *
+
+### 🛠️ Indexes Created Manually (in Supabase)
+
+Table
+
+| **Index Name** | **Description** |
+| --- | --- |
+| Clients_apId_idx | Manually created **B‑tree index** on the apId column in **Supabase**. This index improves lookup and join performance between Clients and APs. Queries filtering by apId previously required full table scans --- after adding this index, performance improved by approximately **19 %** for those operations. |
+
+* * * * *
+
+Future Plans
+--------------------
+-   **Database back up**
+
+    -  In future iterations, we plan to implement regular database backups to ensure data safety and recovery in case of failures.
+This will likely include automated scheduled exports or migration to a higher Supabase tier that supports point‑in‑time recovery and daily backups.
+
+-   **Security Hardening**
+
+    -  Enable Row Level Security (RLS) on all public tables and define access policies to improve data protection and user isolation.
+
+-   **Auth & Access Control**
+
+    -  Migrate from Firebase to Supabase Auth with custom roles, magic links, OAuth providers (Google, GitHub), and advanced JWT‑based permission handling.
+-   **Further Query Optimization**
+    - Look into the following queries and see how they can be improved performance wise.
+ ![alt text](image.png)
+
+
+
+
 * * * * *
 
 API Documentation
