@@ -108,7 +108,7 @@ Performance & Optimization
 
 * * * * *
 
-### 🧩 Indexes Created Automatically by Prisma
+### Indexes Created Automatically by Prisma
 
 | **Index Name** | **Description** |
 | --- | --- |
@@ -126,9 +126,8 @@ Performance & Optimization
 
 * * * * *
 
-### 🛠️ Indexes Created Manually (in Supabase)
+### Indexes Created Manually (in Supabase)
 
-Table
 
 | **Index Name** | **Description** |
 | --- | --- |
@@ -151,10 +150,18 @@ This will likely include automated scheduled exports or migration to a higher Su
 
     -  Migrate from Firebase to Supabase Auth with custom roles, magic links, OAuth providers (Google, GitHub), and advanced JWT‑based permission handling.
 -   **Further Query Optimization**
-    - Look into the following queries and see how they can be improved performance wise.
- ![alt text](image.png)
+    - Look into the following queries and see how they can be improved performance wise. For now most of the queries work faster with a sequential scan, however as the the data grows indexes and other optimization techneques will be considered.
 
+* * * * *
 
+Before and After Indexing Slow Queries
+--------------------
+
+Before - 
+![List of Slow Queries before Indexing](<Before - Slow Queries.png>)
+
+After - 
+![List of Slow Queries after Indexing](<After - Slow Queries.png>)
 
 
 * * * * *
